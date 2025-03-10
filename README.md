@@ -1,2 +1,1 @@
-# trans-server
-qwert
+Python=3.12.9
