@@ -1,3 +1,9 @@
-fastapi
-starlette
-pika
+fastapi>=0.109.0
+uvicorn>=0.27.0
+aio-pika>=9.4.1
+pydantic>=2.6.0
+python-multipart>=0.0.9
+websockets>=12.0
+requests>=2.31.0
+aiohttp>=3.10.0
+googletrans>=3.1.0a0
