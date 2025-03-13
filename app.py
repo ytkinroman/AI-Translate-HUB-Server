@@ -6,6 +6,13 @@ from typing import Dict, List
 from transport.rabbitmq.MessageHandler import MessageHandler
 from transport.rabbitmq.MessageSender import MessageSender
 import uuid
+import asyncio
+import os
+import logging
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -22,15 +29,16 @@ app.add_middleware(
 active_connections: Dict[str, WebSocket] = {}
 
 # Инициализация обработчиков
-message_handler = MessageHandler()
+message_handlers: List[MessageHandler] = []
 message_sender = MessageSender()
 
+# Количество воркеров (можно настроить через переменную окружения)
+NUM_WORKERS = int(os.getenv("NUM_WORKERS", "3"))
 
 class TranslationRequest(BaseModel):
     text: str
     translator_type: str
     ws_session_id: str
-
 
 @app.post("/translate")
 async def translate_text(request: TranslationRequest):
@@ -47,8 +55,8 @@ async def translate_text(request: TranslationRequest):
         )
         return {"status": "success", "message": "Translation request accepted"}
     except Exception as e:
+        logger.error(f"Error in translate_text: {str(e)}")
         return {"status": "error", "message": str(e)}
-
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -72,17 +80,35 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         del active_connections[session_id]
 
-
 async def send_result_to_client(data: dict):
     ws_session_id = data.get("ws_session_id")
     if ws_session_id in active_connections:
         websocket = active_connections[ws_session_id]
         await websocket.send_json(data)
 
+async def start_worker(worker_id: int):
+    try:
+        handler = MessageHandler(worker_id=worker_id)
+        await handler.start()
+        message_handlers.append(handler)
+        handler.set_result_callback(send_result_to_client)
+        logger.info(f"Worker {worker_id} started successfully")
+    except Exception as e:
+        logger.error(f"Error starting worker {worker_id}: {str(e)}")
 
 @app.on_event("startup")
 async def startup_event():
-    # Запуск обработчика сообщений
-    await message_handler.start()
-    # Устанавливаем callback для отправки результатов через WebSocket
-    message_handler.set_result_callback(send_result_to_client)
+    logger.info(f"Starting {NUM_WORKERS} RabbitMQ workers")
+    # Запуск нескольких воркеров
+    for i in range(NUM_WORKERS):
+        asyncio.create_task(start_worker(i))
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("Shutting down RabbitMQ workers")
+    # Закрытие всех воркеров
+    for handler in message_handlers:
+        try:
+            await handler.close()
+        except Exception as e:
+            logger.error(f"Error closing worker: {str(e)}")

@@ -7,7 +7,7 @@ from config import RMQ_USERNAME, RMQ_PASSWORD
 
 
 class MessageSender:
-    def __init__(self, host: str = "localhost", port: int = 5672):
+    def __init__(self, host: str = "localhost", port: int = 15672):
         self.host = host
         self.port = port
         self.connection: Optional[aio_pika.Connection] = None
