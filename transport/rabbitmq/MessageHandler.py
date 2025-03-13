@@ -3,13 +3,19 @@ import json
 from typing import Optional, Callable, Dict, Any
 from modules.handlers.translator_handler import TranslatorHandler
 from transport.rabbitmq.MessageSender import MessageSender
-from config import RMQ_USERNAME, RMQ_PASSWORD
+from config import (
+    RMQ_USERNAME, RMQ_PASSWORD, RMQ_HOST, RMQ_PORT,
+    TRANSLATION_QUEUE, RESULT_QUEUE,
+    LOG_LEVEL, LOG_FORMAT
+)
 import logging
 
+# Настройка логирования
+logging.basicConfig(level=getattr(logging, LOG_LEVEL), format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
 class MessageHandler:
-    def __init__(self, worker_id: int, host: str = "localhost", port: int = 15672):
+    def __init__(self, worker_id: int, host: str = RMQ_HOST, port: int = RMQ_PORT):
         self.worker_id = worker_id
         self.host = host
         self.port = port
@@ -31,11 +37,11 @@ class MessageHandler:
             
             # Создаем очереди
             self.translation_queue = await self.channel.declare_queue(
-                "translation_requests",
+                TRANSLATION_QUEUE,
                 durable=True
             )
             self.result_queue = await self.channel.declare_queue(
-                "translation_results",
+                RESULT_QUEUE,
                 durable=True
             )
 

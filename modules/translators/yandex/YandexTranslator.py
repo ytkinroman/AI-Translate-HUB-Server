@@ -1,37 +1,48 @@
 from typing import Dict, Any
 from modules.translators.BaseTranslater import BaseTranslator
 import requests
-from config import YANDEX_API_KEY
+from config import (
+    YANDEX_API_KEY,
+    YANDEX_DETECT_URL,
+    YANDEX_TRANSLATE_URL
+)
 
 class YandexTranslator(BaseTranslator):
     def __init__(self):
         self.api_key = YANDEX_API_KEY
-        self.detect_url = "https://translate.api.cloud.yandex.net/translate/v2/detect"
-        self.translate_url = "https://translate.api.cloud.yandex.net/translate/v2/translate"
+        self.detect_url = YANDEX_DETECT_URL
+        self.translate_url = YANDEX_TRANSLATE_URL
 
     def execute(self, data: Dict[str, Any]) -> Dict[str, Any]:
         text = data.get('text', '')
+        source_lang = data.get('source_lang', '')
+        target_lang = data.get('target_lang', '')
+        
         if not text:
             return {"error": "No text provided"}
+            
+        if not target_lang:
+            return {"error": "Target language not specified"}
 
         try:
-            # Определяем язык исходного текста
-            detect_response = requests.post(
-                self.detect_url,
-                headers={
-                    "Authorization": f"Api-Key {self.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={"text": text}
-            )
+            # Определяем язык исходного текста, если не указан
+            if not source_lang:
+                detect_response = requests.post(
+                    self.detect_url,
+                    headers={
+                        "Authorization": f"Api-Key {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={"text": text}
+                )
 
-            if detect_response.status_code != 200:
-                return {
-                    "error": "Language detection failed",
-                    "details": detect_response.text
-                }
+                if detect_response.status_code != 200:
+                    return {
+                        "error": "Language detection failed",
+                        "details": detect_response.text
+                    }
 
-            source_language = detect_response.json()['languageCode']
+                source_lang = detect_response.json()['languageCode']
 
             # Выполняем перевод
             translate_response = requests.post(
@@ -42,8 +53,8 @@ class YandexTranslator(BaseTranslator):
                 },
                 json={
                     "texts": text,
-                    "targetLanguageCode": "ru",
-                    "sourceLanguageCode": source_language
+                    "targetLanguageCode": target_lang.lower(),
+                    "sourceLanguageCode": source_lang.lower()
                 }
             )
 
@@ -52,7 +63,7 @@ class YandexTranslator(BaseTranslator):
                 return {
                     "success": True,
                     "translated_text": result['translations'][0]['text'],
-                    "source_language": source_language
+                    "source_language": source_lang
                 }
             else:
                 return {

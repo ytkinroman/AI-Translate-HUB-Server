@@ -9,9 +9,16 @@ import uuid
 import asyncio
 import os
 import logging
+from config import (
+    LOG_LEVEL, LOG_FORMAT,
+    CORS_ORIGINS,
+    MAX_CONNECTIONS,
+    WS_PING_INTERVAL,
+    WS_PING_TIMEOUT
+)
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=getattr(logging, LOG_LEVEL), format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
@@ -19,7 +26,7 @@ app = FastAPI()
 # Настройка CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -60,6 +67,10 @@ async def translate_text(request: TranslationRequest):
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    if len(active_connections) >= MAX_CONNECTIONS:
+        await websocket.close(code=1008, reason="Maximum connections reached")
+        return
+
     await websocket.accept()
     
     # Генерируем UUID для сессии

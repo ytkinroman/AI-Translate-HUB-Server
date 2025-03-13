@@ -10,15 +10,21 @@ class GoogleTranslator(BaseTranslator):
 
     def execute(self, data: Dict[str, Any]) -> Dict[str, Any]:
         text = data.get('text', '')
+        source_lang = data.get('source_lang', '')
+        target_lang = data.get('target_lang', '')
+        
         if not text:
             return {"error": "No text provided"}
+            
+        if not target_lang:
+            return {"error": "Target language not specified"}
 
         try:
             # Используем библиотеку googletrans для перевода
             result = self.translator.translate(
                 text,
-                src='en',
-                dest='ru'
+                src=source_lang.lower() if source_lang else None,
+                dest=target_lang.lower()
             )
             
             return {
