@@ -1,7 +1,6 @@
 from typing import Dict, Any
 from transformers import MarianMTModel, MarianTokenizer
 import torch
-from langdetect import detect
 import langid
 from BaseTranslater import BaseTranslator
 
@@ -11,24 +10,38 @@ class Translator(BaseTranslator):
         self.device = device
 
     def execute(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        text = data['text']
-        detected_lang = langid.classify(text)[0]
-        target_lang = data['lang'].lower()[:2]
-        model_name = f'Helsinki-NLP/opus-mt-{detected_lang}-{target_lang}'
-        print(model_name)
+        text = data.get('text', '').strip()
+        target_lang = data.get('target_lang', '').lower()[:2]
 
-        tokenizer = MarianTokenizer.from_pretrained(model_name)
-        model = MarianMTModel.from_pretrained(model_name).to(self.device)
+        if not text:
+            return {"error": "No text provided"}
 
-        # Токенизация текста
-        inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True).to(self.device)
+        if not target_lang:
+            return {"error": "Target language not specified"}
 
-        # Перевод текста
-        with torch.no_grad():
-            translated = model.generate(**inputs)
+        try:
+            # Определяем язык исходного текста
+            source_lang = langid.classify(text)[0]
+            model_name = f'Helsinki-NLP/opus-mt-{source_lang}-{target_lang}'
 
-        # Декодирование переведенного текста
-        translated_text = tokenizer.decode(translated[0], skip_special_tokens=True)
+            # Загружаем модель и токенизатор
+            tokenizer = MarianTokenizer.from_pretrained(model_name)
+            model = MarianMTModel.from_pretrained(model_name).to(self.device)
 
-        return {'text': translated_text, 'lang': detected_lang}
+            # Токенизация текста
+            inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True).to(self.device)
 
+            # Перевод текста
+            with torch.no_grad():
+                translated = model.generate(**inputs)
+
+            # Декодирование переведенного текста
+            translated_text = tokenizer.decode(translated[0], skip_special_tokens=True)
+
+            return {
+                "success": True,
+                "translated_text": translated_text,
+                "source_language": source_lang
+            }
+        except Exception as e:
+            return {"error": "Translation failed", "details": str(e)}
