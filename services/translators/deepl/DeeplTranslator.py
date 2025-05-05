@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from modules.translators.BaseTranslater import BaseTranslator
+from services.translators.BaseTranslator import BaseTranslator
 import requests
 from config import (
     DEEPL_API_KEY,

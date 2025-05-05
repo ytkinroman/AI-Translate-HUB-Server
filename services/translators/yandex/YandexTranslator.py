@@ -1,13 +1,16 @@
-from typing import Dict, Any
-from modules.translators.BaseTranslater import BaseTranslator
 import requests
+from typing import Dict, Any
+from services.translators.BaseTranslator import BaseTranslator
+
 from config import (
     YANDEX_API_KEY,
     YANDEX_DETECT_URL,
     YANDEX_TRANSLATE_URL
 )
 
+
 class YandexTranslator(BaseTranslator):
+    """API клиент Yandex переводчика."""
     def __init__(self):
         self.api_key = YANDEX_API_KEY
         self.detect_url = YANDEX_DETECT_URL
@@ -61,18 +64,20 @@ class YandexTranslator(BaseTranslator):
             if translate_response.status_code == 200:
                 result = translate_response.json()
                 return {
-                    "success": True,
-                    "translated_text": result['translations'][0]['text'],
-                    "source_language": source_lang
+                    "result": {
+                        "success": True,
+                        "text": result['translations'][0]['text'],
+                        "source_language": source_lang
+                    }
                 }
             else:
                 return {
-                    "error": f"Translation failed with status code {translate_response.status_code}",
+                    "error": f"Перевод не выполнился с кодом: '{translate_response.status_code}'",
                     "details": translate_response.text
                 }
         except Exception as e:
             return {
-                "error": "Translation failed",
+                "error": "Ошибка при выполнении перевода",
                 "details": str(e)
             }
 

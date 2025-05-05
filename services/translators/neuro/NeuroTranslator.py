@@ -1,11 +1,11 @@
-from modules.translators.BaseTranslater import BaseTranslater
-from transport.rabbitmq.MessageSender import MessageSender
-from transport.rabbitmq.Message import Message
-from config import RMQ_QUEUE_4_ANSWERS
 from neuro import neuro
+from config import RMQ_QUEUE_4_ANSWERS
+from transport.rabbitmq.Message import Message
+from transport.rabbitmq.MessageSender import MessageSender
+from services.translators.BaseTranslator import BaseTranslator
 
 
-class NeuroTranslator(BaseTranslater):
+class NeuroTranslator(BaseTranslator):
     def __init__(self):
         self.name = 'neuro'
         self.description = 'Наше кастомное решение для перевода'
