@@ -3,13 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 import csv
+import time
 from typing import Dict, List
+from asyncio import create_task, sleep
 from transport.rabbitmq.MessageHandler import MessageHandler
 from transport.rabbitmq.MessageSender import MessageSender
 import uuid
-import asyncio
-import os
+
 import logging
+
 from config import (
     LOG_LEVEL, LOG_FORMAT,
     CORS_ORIGINS,
@@ -67,6 +69,23 @@ async def translate_text(request: TranslationRequest):
         return {"status": "error", "message": str(e)}
 
 
+async def ping_connection(websocket: WebSocket, session_id: str):
+    while True:
+        try:
+            await sleep(WS_PING_INTERVAL)
+            ping_start = time.time()
+            await websocket.ping()
+            
+            # Если превысили таймаут
+            if time.time() - ping_start > WS_PING_TIMEOUT:
+                logger.warning(f"WebSocket ping timeout for session {session_id}")
+                await websocket.close(code=1001)  # Going away
+                break
+                
+        except Exception as e:
+            logger.error(f"Error in ping for session {session_id}: {str(e)}")
+            break
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     with open("connections.csv", encoding='utf-8') as w_file:
@@ -93,6 +112,9 @@ async def websocket_endpoint(websocket: WebSocket):
         "session_id": session_id
     })
     
+    # Создаем задачу для пинга соединения
+    ping_task = create_task(ping_connection(websocket, session_id))
+    
     try:
         while True:
             data = await websocket.receive_text()
@@ -101,7 +123,7 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_text(f"Message received: {data}")
             
     except WebSocketDisconnect:
-        
+        ping_task.cancel()  # Отменяем пинги при отключении
         del active_connections[session_id]
         
         with open("connections.csv", encoding='utf-8') as w_file:
