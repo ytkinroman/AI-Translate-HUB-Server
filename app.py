@@ -1,23 +1,21 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import json
 import csv
-import time
-from typing import Dict, List
-from asyncio import create_task, sleep
-from transport.rabbitmq.MessageHandler import MessageHandler
-from transport.rabbitmq.MessageSender import MessageSender
 import uuid
-
+import time
 import logging
+from typing import Dict
+from pydantic import BaseModel
+from asyncio import create_task, sleep
+from fastapi.middleware.cors import CORSMiddleware
+from transport.rabbitmq.MessageSender import MessageSender
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from config import (
-    LOG_LEVEL, LOG_FORMAT,
+    LOG_LEVEL, 
+    LOG_FORMAT,
     CORS_ORIGINS,
+    WS_PING_TIMEOUT,
     MAX_CONNECTIONS,
     WS_PING_INTERVAL,
-    WS_PING_TIMEOUT
 )
 
 # Временное хранение активных WebSocket соединений
@@ -70,6 +68,18 @@ async def translate_text(request: TranslationRequest):
 
 
 async def ping_connection(websocket: WebSocket, session_id: str):
+    """
+    Асинхронная функция для периодической проверки активности WebSocket соединения.
+    
+    Args:
+        websocket (WebSocket): Активное WebSocket соединение для проверки
+        session_id (str): Уникальный идентификатор сессии для логирования
+
+    Механизм работы:
+        - Отправляет ping-сообщение каждые WS_PING_INTERVAL секунд
+        - Если ответ не получен в течение WS_PING_TIMEOUT секунд, соединение закрывается
+        - Логирует все ошибки и таймауты для отладки
+    """
     while True:
         try:
             await sleep(WS_PING_INTERVAL)
@@ -88,6 +98,25 @@ async def ping_connection(websocket: WebSocket, session_id: str):
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    """
+    Endpoint для установки и поддержания WebSocket соединения.
+    
+    Args:
+        websocket (WebSocket): Входящее WebSocket соединение
+
+    Функциональность:
+        1. Проверяет лимит подключений (MAX_CONNECTIONS)
+        2. Генерирует уникальный session_id
+        3. Сохраняет соединение в active_connections и connections.csv
+        4. Запускает асинхронную задачу для проверки активности соединения:
+           - Пинги каждые WS_PING_INTERVAL секунд
+           - Таймаут WS_PING_TIMEOUT секунд
+        5. Обрабатывает входящие сообщения
+        6. При отключении:
+           - Отменяет задачу пингов
+           - Удаляет соединение из active_connections
+           - Обновляет connections.csv
+    """
     with open("connections.csv", encoding='utf-8') as w_file:
             # Читаем все активные соединения
             file_reader = csv.reader(w_file)
