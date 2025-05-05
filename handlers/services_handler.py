@@ -11,7 +11,7 @@ def import_module(name):
 
 
 @method
-def transcribe(context: object, payload: dict):
+def translate(context: object, payload: dict):
     """
         Метод вызывает транскрибацию аудио
 
@@ -21,8 +21,8 @@ def transcribe(context: object, payload: dict):
         :return: Результат работы функции в формате JSON-строки
     """
 
-    cmd_class_name = "CmdTranscribe"
-    cmd = "JSON_RPC.commands.transcribe"
+    cmd_class_name = "TranslatorProvider"
+    cmd = "services.translators." + cmd_class_name
 
     if context is None:
         logging.error("[RPC_Transcribe] Context (Worker instance) not provided to transcribe_audio")
@@ -33,23 +33,24 @@ def transcribe(context: object, payload: dict):
         logging.error("[RPC_Transcribe] transcribe_pipeline not found or not initialized in context")
         return Error(code=500, message="[RPC_Transcribe] Internal server error: transcribe_pipeline not ready")
 
-    # Получаем пайплайн из контекста
-    transcribe_pipeline = context.transcribe_pipeline
-
     try:
         params = dict()
         params['payload'] = payload
-        params['pipeline'] = transcribe_pipeline
         logging.info(f"[RPC_Transcribe] Params: {params}")
+        
         cmd_module = import_module(cmd)
 
         if hasattr(cmd_module, cmd_class_name):
             cmd_class = getattr(cmd_module, cmd_class_name)
             cmd_instance = cmd_class()
 
-            result = cmd_instance.Execute(params)
+            result = cmd_instance.execute(params)
+            
+            if 'error' in result:
+                logging.error(f"[RPC_Translate] Error: {result['error']}")
+                return Error(code=500, message=result['error'])
 
-            return result
+            return Success(result)
         else:
             logging.error(f"[RPC_Transcribe] Command class {cmd_class_name} not found in module {cmd}")
             return Error(code=500, message=f"Command class {cmd_class_name} not found")
