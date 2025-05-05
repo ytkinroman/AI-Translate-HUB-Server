@@ -2,6 +2,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
+import csv
 from typing import Dict, List
 from transport.rabbitmq.MessageHandler import MessageHandler
 from transport.rabbitmq.MessageSender import MessageSender
@@ -42,10 +43,12 @@ message_sender = MessageSender()
 # Количество воркеров (можно настроить через переменную окружения)
 NUM_WORKERS = int(os.getenv("NUM_WORKERS", "3"))
 
+
 class TranslationRequest(BaseModel):
     text: str
     translator_type: str
     ws_session_id: str
+
 
 @app.post("/translate")
 async def translate_text(request: TranslationRequest):
@@ -65,6 +68,7 @@ async def translate_text(request: TranslationRequest):
         logger.error(f"Error in translate_text: {str(e)}")
         return {"status": "error", "message": str(e)}
 
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     if len(active_connections) >= MAX_CONNECTIONS:
@@ -76,7 +80,10 @@ async def websocket_endpoint(websocket: WebSocket):
     # Генерируем UUID для сессии
     session_id = str(uuid.uuid4())
     active_connections[session_id] = websocket
-    
+    with open("classmates.csv", encoding='utf-8') as w_file:
+        file_writer = csv.writer(w_file)
+        file_writer.writerow([session_id, websocket])
+
     # Отправляем ID сессии клиенту
     await websocket.send_json({
         "type": "connection_established",
@@ -91,11 +98,13 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         del active_connections[session_id]
 
+
 async def send_result_to_client(data: dict):
     ws_session_id = data.get("ws_session_id")
     if ws_session_id in active_connections:
         websocket = active_connections[ws_session_id]
         await websocket.send_json(data)
+
 
 async def start_worker(worker_id: int):
     try:
@@ -107,12 +116,14 @@ async def start_worker(worker_id: int):
     except Exception as e:
         logger.error(f"Error starting worker {worker_id}: {str(e)}")
 
+
 @app.on_event("startup")
 async def startup_event():
     logger.info(f"Starting {NUM_WORKERS} RabbitMQ workers")
     # Запуск нескольких воркеров
     for i in range(NUM_WORKERS):
         asyncio.create_task(start_worker(i))
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
