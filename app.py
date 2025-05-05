@@ -1,4 +1,3 @@
-import csv
 import uuid
 import time
 import logging
@@ -7,6 +6,7 @@ from pydantic import BaseModel
 from asyncio import create_task, sleep
 from fastapi.middleware.cors import CORSMiddleware
 from transport.rabbitmq.MessageSender import MessageSender
+from transport.redis.redis_client import store_connection, remove_connection, check_connection
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from config import (
@@ -18,7 +18,7 @@ from config import (
     WS_PING_INTERVAL,
 )
 
-# Временное хранение активных WebSocket соединений
+# Хранение активных WebSocket соединений локально
 active_connections: Dict[str, WebSocket] = {}
 
 # Настройка логирования
@@ -45,14 +45,9 @@ app.add_middleware(
 
 @app.post("/translate")
 async def translate_text(request: TranslationRequest):
-    try:
-        with open("connections.csv", encoding='utf-8') as w_file:
-            # Читаем все активные соединения
-            file_reader = csv.reader(w_file)
-            active_connections = dict(file_reader)
-        
+    try:        
         # Проверяем, существует ли сессия
-        if request.ws_session_id not in active_connections:
+        if not check_connection(request.ws_session_id):
             return {"status": "error", "message": "Invalid session ID"}
             
         # Отправляем запрос через MessageSender
@@ -117,11 +112,7 @@ async def websocket_endpoint(websocket: WebSocket):
            - Удаляет соединение из active_connections
            - Обновляет connections.csv
     """
-    with open("connections.csv", encoding='utf-8') as w_file:
-            # Читаем все активные соединения
-            file_reader = csv.reader(w_file)
-            active_connections = dict(file_reader)
-    
+    # Проверяем лимит подключений
     if len(active_connections) >= MAX_CONNECTIONS:
         await websocket.close(code=1008, reason="Maximum connections reached")
         return
@@ -130,10 +121,9 @@ async def websocket_endpoint(websocket: WebSocket):
     
     # Генерируем UUID для сессии
     session_id = str(uuid.uuid4())
+    # Сохраняем websocket локально и id в Redis
     active_connections[session_id] = websocket
-    with open("connections.csv", encoding='utf-8') as w_file:
-        file_writer = csv.writer(w_file)
-        file_writer.writerow([session_id, websocket])
+    store_connection(session_id, websocket)
 
     # Отправляем ID сессии клиенту
     await websocket.send_json({
@@ -155,13 +145,4 @@ async def websocket_endpoint(websocket: WebSocket):
         ping_task.cancel()  # Отменяем пинги при отключении
         del active_connections[session_id]
         
-        with open("connections.csv", encoding='utf-8') as w_file:
-            file_reader = csv.reader(w_file)
-            rows = list(file_reader)
-            
-            # Удаляем строку с отключенной сессией
-            rows = [row for row in rows if row[0] != session_id]
-            
-            # Записываем обновленный список соединений
-            file_writer = csv.writer(w_file)
-            file_writer.writerows(rows)
+        remove_connection(session_id)

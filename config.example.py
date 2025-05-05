@@ -36,3 +36,15 @@ DEEPL_API_URL = "https://api-free.deepl.com/v2/translate"
 YANDEX_DETECT_URL = "https://translate.api.cloud.yandex.net/translate/v2/detect"
 YANDEX_TRANSLATE_URL = "https://translate.api.cloud.yandex.net/translate/v2/translate" 
 #endregion <<  Настройки API сервисов перевода >>
+
+#region << Redis >>
+REDIS_HOST = "localhost"  # Хост Redis
+REDIS_PORT = 6379        # Порт Redis
+REDIS_DB = 0            # Номер базы данных Redis
+REDIS_TTL = 3600        # Время жизни записей в Redis (в секундах)
+#endregion << Redis >>
+
+#region << Telegram >>
+BOT_TOKEN = ""
+DEBUG_RECIPIENTS = [""]
+#endregion << Telegram >>
