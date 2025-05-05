@@ -14,6 +14,7 @@ import logging
 logging.basicConfig(level=getattr(logging, LOG_LEVEL), format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
+
 class MessageHandler:
     def __init__(self, worker_id: int, host: str = RMQ_HOST, port: int = RMQ_PORT):
         self.worker_id = worker_id
@@ -133,4 +134,3 @@ class MessageHandler:
         except Exception as e:
             logger.error(f"Worker {self.worker_id} error during closing: {str(e)}")
             raise
-
