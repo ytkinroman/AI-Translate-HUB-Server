@@ -171,3 +171,9 @@ cython_debug/
 .pypirc
 
 config.py
+
+var
+
+.venv
+venv
+.vscode
