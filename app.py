@@ -18,9 +18,19 @@ from config import (
     WS_PING_TIMEOUT
 )
 
+# Временное хранение активных WebSocket соединений
+active_connections: Dict[str, WebSocket] = {}
+
 # Настройка логирования
 logging.basicConfig(level=getattr(logging, LOG_LEVEL), format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
+
+message_sender = MessageSender()
+
+class TranslationRequest(BaseModel):
+    text: str
+    translator_type: str
+    ws_session_id: str
 
 app = FastAPI()
 
@@ -33,26 +43,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Хранение активных WebSocket соединений
-active_connections: Dict[str, WebSocket] = {}
-
-# Инициализация обработчиков
-message_handlers: List[MessageHandler] = []
-message_sender = MessageSender()
-
-# Количество воркеров (можно настроить через переменную окружения)
-NUM_WORKERS = int(os.getenv("NUM_WORKERS", "3"))
-
-
-class TranslationRequest(BaseModel):
-    text: str
-    translator_type: str
-    ws_session_id: str
-
-
 @app.post("/translate")
 async def translate_text(request: TranslationRequest):
     try:
+        with open("connections.csv", encoding='utf-8') as w_file:
+            # Читаем все активные соединения
+            file_reader = csv.reader(w_file)
+            active_connections = dict(file_reader)
+        
         # Проверяем, существует ли сессия
         if request.ws_session_id not in active_connections:
             return {"status": "error", "message": "Invalid session ID"}
@@ -71,6 +69,11 @@ async def translate_text(request: TranslationRequest):
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    with open("connections.csv", encoding='utf-8') as w_file:
+            # Читаем все активные соединения
+            file_reader = csv.reader(w_file)
+            active_connections = dict(file_reader)
+    
     if len(active_connections) >= MAX_CONNECTIONS:
         await websocket.close(code=1008, reason="Maximum connections reached")
         return
@@ -80,7 +83,7 @@ async def websocket_endpoint(websocket: WebSocket):
     # Генерируем UUID для сессии
     session_id = str(uuid.uuid4())
     active_connections[session_id] = websocket
-    with open("classmates.csv", encoding='utf-8') as w_file:
+    with open("connections.csv", encoding='utf-8') as w_file:
         file_writer = csv.writer(w_file)
         file_writer.writerow([session_id, websocket])
 
@@ -93,44 +96,21 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
+            
             # Обработка входящих WebSocket сообщений
             await websocket.send_text(f"Message received: {data}")
+            
     except WebSocketDisconnect:
+        
         del active_connections[session_id]
-
-
-async def send_result_to_client(data: dict):
-    ws_session_id = data.get("ws_session_id")
-    if ws_session_id in active_connections:
-        websocket = active_connections[ws_session_id]
-        await websocket.send_json(data)
-
-
-async def start_worker(worker_id: int):
-    try:
-        handler = MessageHandler(worker_id=worker_id)
-        await handler.start()
-        message_handlers.append(handler)
-        handler.set_result_callback(send_result_to_client)
-        logger.info(f"Worker {worker_id} started successfully")
-    except Exception as e:
-        logger.error(f"Error starting worker {worker_id}: {str(e)}")
-
-
-@app.on_event("startup")
-async def startup_event():
-    logger.info(f"Starting {NUM_WORKERS} RabbitMQ workers")
-    # Запуск нескольких воркеров
-    for i in range(NUM_WORKERS):
-        asyncio.create_task(start_worker(i))
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("Shutting down RabbitMQ workers")
-    # Закрытие всех воркеров
-    for handler in message_handlers:
-        try:
-            await handler.close()
-        except Exception as e:
-            logger.error(f"Error closing worker: {str(e)}")
+        
+        with open("connections.csv", encoding='utf-8') as w_file:
+            file_reader = csv.reader(w_file)
+            rows = list(file_reader)
+            
+            # Удаляем строку с отключенной сессией
+            rows = [row for row in rows if row[0] != session_id]
+            
+            # Записываем обновленный список соединений
+            file_writer = csv.writer(w_file)
+            file_writer.writerows(rows)
