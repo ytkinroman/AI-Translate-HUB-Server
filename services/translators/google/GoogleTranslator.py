@@ -1,7 +1,8 @@
 from typing import Dict, Any
-from modules.translators.BaseTranslater import BaseTranslator
-from googletrans import Translator
 from config import GOOGLE_API_KEY
+from googletrans import Translator
+from services.translators.BaseTranslator import BaseTranslator
+
 
 class GoogleTranslator(BaseTranslator):
     def __init__(self):

@@ -1,12 +1,12 @@
 from typing import Dict, Any
-from services.translators.BaseTranslater import BaseTranslater
+from services.translators.BaseTranslator import BaseTranslator
 import requests
 from config import (
     DEEPL_API_KEY,
     DEEPL_API_URL
 )
 
-class DeeplTranslator(BaseTranslater):
+class DeeplTranslator(BaseTranslator):
     def __init__(self):
         self.api_key = DEEPL_API_KEY
         self.api_url = DEEPL_API_URL
