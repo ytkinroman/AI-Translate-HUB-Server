@@ -9,10 +9,10 @@ from jsonrpcserver import dispatch
 
 from transport.rabbitmq.MessageSender import MessageSender
 from config import (
-    RABBIT_HOST,
-    RABBIT_PORT,
-    RABBIT_USER,
-    RABBIT_PASSWORD,
+    RMQ_HOST as RABBIT_HOST,
+    RMQ_PORT as RABBIT_PORT,
+    RMQ_USERNAME as RABBIT_USER,
+    RMQ_PASSWORD as RABBIT_PASSWORD,
 )
 
 # Настройка логирования
@@ -198,3 +198,8 @@ class RequestHandler:
                 error_msg = f"[Consumer] Error closing connection: {e}"
                 logging.error(error_msg)
                 self._send_error_notification(error_msg)
+
+
+if __name__ == "__main__":
+    handler = RequestHandler()
+    handler.start_consuming()
