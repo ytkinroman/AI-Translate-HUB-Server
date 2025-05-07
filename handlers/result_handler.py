@@ -6,10 +6,10 @@ import pika
 from fastapi import WebSocket
 
 from config import (
-    RABBIT_HOST,
-    RABBIT_PORT,
-    RABBIT_USER,
-    RABBIT_PASSWORD,
+    RMQ_HOST as RABBIT_HOST,
+    RMQ_PORT as RABBIT_PORT,
+    RMQ_USERNAME as RABBIT_USER,
+    RMQ_PASSWORD as RABBIT_PASSWORD,
 )
 from transport.redis.redis_client import check_connection
 
@@ -155,3 +155,7 @@ class ResultHandler:
                 logging.info("[Consumer] Connection closed")
             except Exception as e:
                 logging.error(f"[Consumer] Error closing connection: {e}")
+
+if __name__ == "__main__":
+    handler = ResultHandler()
+    handler.start_consuming()
