@@ -67,8 +67,8 @@ def telegram(context: object = None, payload: dict = {}):
         :return: str: Результат работы функции в формате JSON-строки
     """
 
-    cmd_class_name = "CmdTelegram"
-    cmd = "JSON_RPC.commands.telegram"
+    cmd_class_name = "TelegramProvider"
+    cmd = "services.telegram.TelegramProvider"
 
     try:
         params = dict()
