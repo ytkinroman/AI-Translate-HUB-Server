@@ -28,12 +28,11 @@ def translate(context: object, payload: dict):
         return Error(code=500, message="[RPC_Translate] Internal server error: Контекст (Экземпляр воркера) не укзан")
 
     try:
-        params = dict(payload.get('params')).get('payload')
-        if not params:
-            logging.error("[RPC_Translate] Не указаны параметры для перевода")
+        if not payload:
+            logging.error(f"[RPC_Translate] Не указаны параметры для перевода: '{payload}'")
             return Error(code=500, message="[RPC_Translate] Internal server error: Не указаны параметры для перевода")
         
-        logging.info(f"[RPC_Translate] Параметры: {params}")
+        logging.info(f"[RPC_Translate] Параметры: {payload}")
         
         cmd_module = import_module(cmd)
 
@@ -41,7 +40,7 @@ def translate(context: object, payload: dict):
             cmd_class = getattr(cmd_module, cmd_class_name)
             cmd_instance = cmd_class()
 
-            result = cmd_instance.execute(params)
+            result = cmd_instance.execute(payload)
             
             if 'error' in result:
                 logging.error(f"[RPC_Translate] Ошибка: {result['error']}")
