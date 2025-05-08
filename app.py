@@ -7,7 +7,7 @@ from asyncio import create_task, sleep
 from fastapi.middleware.cors import CORSMiddleware
 from transport.rabbitmq.MessageSender import MessageSender
 from transport.redis.redis_client import store_connection, remove_connection, check_connection
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 
 from config import (
     LOG_LEVEL, 
@@ -37,6 +37,10 @@ class TranslationRequest(BaseModel):
     method: str
     payload: TranslationPayload
     ws_session_id: str
+
+class TranslationResult(BaseModel):
+    connection_id: str
+    result: dict
 
 app = FastAPI()
 
@@ -132,7 +136,7 @@ async def websocket_endpoint(websocket: WebSocket):
     session_id = str(uuid.uuid4())
     # Сохраняем websocket локально и id в Redis
     active_connections[session_id] = websocket
-    store_connection(session_id, websocket)
+    store_connection(session_id)
 
     # Отправляем ID сессии клиенту
     await websocket.send_json({
@@ -155,3 +159,28 @@ async def websocket_endpoint(websocket: WebSocket):
         del active_connections[session_id]
         
         remove_connection(session_id)
+        
+@app.post("/translation-result")
+async def handle_translation_result(result: TranslationResult):
+    """
+    Принимает результат перевода и отправляет его клиенту через WebSocket
+    """
+    try:
+        connection_id = result.connection_id
+        
+        # Проверяем существование соединения
+        if not check_connection(connection_id):
+            raise HTTPException(status_code=404, detail="Connection not found")
+            
+        # Получаем WebSocket из активных соединений
+        websocket = active_connections.get(connection_id)
+        if not websocket:
+            raise HTTPException(status_code=404, detail="WebSocket connection not found")
+            
+        # Отправляем результат клиенту
+        await websocket.send_json(result.result)
+        return {"status": "success", "message": "Result sent to client"}
+        
+    except Exception as e:
+        logger.error(f"Error sending translation result: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
