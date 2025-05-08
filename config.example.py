@@ -44,6 +44,11 @@ REDIS_DB = 0            # Номер базы данных Redis
 REDIS_TTL = 3600        # Время жизни записей в Redis (в секундах)
 #endregion << Redis >>
 
+#region << FastAPI >>
+APP_HOST = "localhost"  # Хост FastAPI сервера
+APP_PORT = 8000        # Порт FastAPI сервера
+#endregion << FastAPI >>
+
 #region << Telegram >>
 BOT_TOKEN = ""
 DEBUG_RECIPIENTS = [""]
