@@ -4,15 +4,18 @@ import signal
 import time
 from typing import Dict, Any
 
-import pika
+import aio_pika
 from jsonrpcserver import dispatch
-
+from handlers.services_handler import translate
 from transport.rabbitmq.MessageSender import MessageSender
+import asyncio
 from config import (
     RMQ_HOST as RABBIT_HOST,
     RMQ_PORT as RABBIT_PORT,
     RMQ_USERNAME as RABBIT_USER,
     RMQ_PASSWORD as RABBIT_PASSWORD,
+    TRANSLATION_QUEUE as WORK_QUEUE,
+    RESULT_QUEUE
 )
 
 # Настройка логирования
@@ -21,168 +24,150 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# Название очередей
-WORK_QUEUE = 'requests'
-RESULT_QUEUE = 'results'
-
 class RequestHandler:
     def __init__(self):
         self.connection = None
         self.channel = None
         self.should_stop = False
         self._setup_signal_handlers()
-        self._setup_connection()
 
     def _setup_signal_handlers(self):
         """Настройка обработчиков сигналов для graceful shutdown"""
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
 
-    def _send_error_notification(self, error_message: str):
-        """Отправка уведомления об ошибке через очередь requests"""
-        message = {
-            'service': 'telegram',
-            'chat_id': None,  # Будет использоваться DEBUG_RECIPIENTS из конфига
-            'payload': error_message,
-            'message_id': str(time.time())  # Используем время как уникальный ID
-        }
-        try:
-            with MessageSender() as sender:
-                sender.send_message(WORK_QUEUE, message)
-        except Exception as e:
-            logging.error(f"Failed to send error notification: {e}")
+    # async def _send_error_notification(self, error_message: str):
+    #     """Отправка уведомления об ошибке через очередь requests"""
+    #     message = {
+    #         'service': 'telegram',
+    #         'chat_id': None,  # Будет использоваться DEBUG_RECIPIENTS из конфига
+    #         'payload': error_message,
+    #         'message_id': str(time.time())  # Используем время как уникальный ID
+    #     }
+    #     try:
+    #         async with MessageSender() as sender:
+    #             await sender.send_message(message)
+    #     except Exception as e:
+    #         logging.error(f"Failed to send error notification: {e}")
 
     def _signal_handler(self, signum, frame):
         """Обработчик сигналов"""
         message = f"Received signal {signum}. Starting graceful shutdown..."
         logging.info(message)
-        self._send_error_notification(message)
+        
+        # Создаем новый event loop для асинхронных вызовов в синхронном контексте
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Запускаем асинхронное уведомление об ошибке
+        #loop.run_until_complete(self._send_error_notification(message))
+        
         self.should_stop = True
         if self.connection and not self.connection.is_closed:
-            self.connection.close()
+            loop.run_until_complete(self.connection.close())
+        
+        loop.close()
 
-    def _setup_connection(self):
-        """Установка соединения с RabbitMQ"""
-        while not self.should_stop:
-            try:
-                params = pika.ConnectionParameters(
-                    host=RABBIT_HOST,
-                    port=RABBIT_PORT,
-                    credentials=pika.PlainCredentials(RABBIT_USER, RABBIT_PASSWORD),
-                    heartbeat=30,
-                    socket_timeout=300,
-                    connection_attempts=3,
-                    retry_delay=5
-                )
-                self.connection = pika.BlockingConnection(params)
-                self.channel = self.connection.channel()
-                self.channel.queue_declare(queue=WORK_QUEUE, durable=True)
-                self.channel.basic_qos(prefetch_count=1)
-                logging.info("Successfully connected to RabbitMQ")
-                return True
-            except Exception as e:
-                if self.should_stop:
-                    break
-                error_msg = f"Failed to connect to RabbitMQ: {e}"
-                logging.error(error_msg)
-                self._send_error_notification(error_msg)
-                time.sleep(5)
-        return False
-
-    def _on_message(self, ch, method, properties, body):
+    async def _on_message(self, message: aio_pika.IncomingMessage):
         """Обработка входящего сообщения"""
         try:
-            logging.info(f"[Handler] Received message: {body}")
-            params = json.loads(body)
-            service = params.get('service')
-            connection_id = params.get('connection_id')
-            
-            if not service or not connection_id:
-                error_msg = "[Handler] Missing 'service' or 'connection_id'"
-                logging.error(error_msg)
-                self._send_error_notification(error_msg)
-                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-                return
-
-            rpc = json.dumps({
-                "jsonrpc": "2.0",
-                "method": service,
-                "params": [params.get('payload')],
-                "id": params.get('message_id', '1')
-            })
-            
-            logging.info(f"[Handler] Dispatching RPC: {rpc}")
-            response = dispatch(rpc)
-            resp_str = str(response)
-
-            if resp_str:
-                resp = json.loads(resp_str)
-                if 'result' in resp:  
-                    message = {
-                        'connection_id': connection_id,
-                        'result': resp['result']
-                    }
-                    
-                    logging.info(f"[Handler] Message: {message['result']}")
-                    if message['result'] and message['connection_id'] and service != 'telegram':
-                        with MessageSender() as sender:
-                            sender.send_message(RESULT_QUEUE, json.dumps(message))
-                else:
-                    error_msg = f"[Handler] Error from service: {resp.get('error')}"
+            async with message.process():
+                logging.info(f"[Handler] Received message: {message.body}")
+                params = json.loads(message.body.decode())
+                method_name = params.get('method')
+                connection_id = params.get('ws_session_id')
+                payload = params.get('payload', {})  # Создаем копию, чтобы не изменять оригинал
+                
+                # Переименовываем translator_type в translator_code если есть
+                if 'translator_type' in payload:
+                    payload['translator_code'] = payload.pop('translator_type')
+                service = params.get('queue', '')
+                
+                if not method_name or not connection_id or not payload:
+                    error_msg = "[Handler] Missing required fields: 'method', 'ws_session_id' or 'payload'"
                     logging.error(error_msg)
-                    self._send_error_notification(error_msg)
-            else:
-                logging.info("[Handler] Notification (no response expected)")
+                    #await self._send_error_notification(error_msg)
+                    return
 
-            ch.basic_ack(delivery_tag=method.delivery_tag)
+                rpc = json.dumps({
+                    "jsonrpc": "2.0",
+                    "method": method_name,
+                    "params": {
+                        "payload": payload
+                    },
+                    "id": '1'
+                })
+                
+                logging.info(f"[Handler] Dispatching RPC: {rpc}")
+                response = dispatch(rpc, context=self)
+                resp_str = str(response)
+
+                if resp_str:
+                    try:
+                        resp = json.loads(resp_str)
+                        if 'result' in resp:  
+                            res_message = {
+                                'connection_id': connection_id,
+                                'result': resp['result'],
+                                'queue': RESULT_QUEUE
+                            }
+                            
+                            if res_message['result'] and res_message['connection_id'] and service != 'telegram':
+                                async with MessageSender() as sender:
+                                    await sender.send_message(res_message)
+                        else:
+                            error_msg = f"[Handler] Error from service: {resp.get('error')}"
+                            logging.error(error_msg)
+                            #await self._send_error_notification(error_msg)
+                    except json.JSONDecodeError as e:
+                        error_msg = f"[Handler] Error parsing response: {e}"
+                        logging.error(error_msg)
+                        #await self._send_error_notification(error_msg)
+                else:
+                    logging.info("[Handler] Notification (no response expected)")
 
         except Exception as e:
             error_msg = f"[Handler] Exception: {e}"
             logging.exception(error_msg)
-            self._send_error_notification(error_msg)
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+            #await self._send_error_notification(error_msg)
+            await message.reject(requeue=False)
 
-    def start_consuming(self):
+    async def start_consuming(self):
         """Запуск прослушивания очереди"""
         while not self.should_stop:
             try:
-                if not self.connection or self.connection.is_closed:
-                    if not self._setup_connection():
-                        continue
-
-                self.channel.basic_consume(
-                    queue=WORK_QUEUE,
-                    on_message_callback=self._on_message
+                # Устанавливаем соединение
+                self.connection = await aio_pika.connect_robust(
+                    f"amqp://{RABBIT_USER}:{RABBIT_PASSWORD}@{RABBIT_HOST}:{RABBIT_PORT}/"
                 )
+                self.channel = await self.connection.channel()
+                await self.channel.set_qos(prefetch_count=1)
+
+                # Объявляем очередь
+                queue = await self.channel.declare_queue(WORK_QUEUE, durable=True)
+                
                 logging.info("[Consumer] Waiting for messages. To exit press CTRL+C")
-                self.channel.start_consuming()
+                
+                async with queue.iterator() as queue_iter:
+                    async for message in queue_iter:
+                        if self.should_stop:
+                            break
+                        await self._on_message(message)
 
-            except pika.exceptions.ConnectionClosedByBroker:
-                if not self.should_stop:
-                    error_msg = "[Consumer] Connection was closed by broker, retrying..."
-                    logging.warning(error_msg)
-                    self._send_error_notification(error_msg)
-                    continue
-
-            except pika.exceptions.AMQPChannelError as e:
-                error_msg = f"[Consumer] Channel error: {e}, stopping..."
-                logging.error(error_msg)
-                self._send_error_notification(error_msg)
-                break
-
-            except pika.exceptions.AMQPConnectionError:
+            except aio_pika.exceptions.CONNECTION_EXCEPTIONS:
                 if not self.should_stop:
                     error_msg = "[Consumer] Connection was lost, retrying..."
                     logging.warning(error_msg)
-                    self._send_error_notification(error_msg)
+                    #await self._send_error_notification(error_msg)
+                    await asyncio.sleep(5)
                     continue
 
             except Exception as e:
                 error_msg = f"[Consumer] Unexpected error: {e}"
                 logging.exception(error_msg)
-                self._send_error_notification(error_msg)
+                #await self._send_error_notification(error_msg)
                 if not self.should_stop:
-                    time.sleep(5)
+                    await asyncio.sleep(5)
                     continue
                 break
 
@@ -192,14 +177,17 @@ class RequestHandler:
         # Graceful shutdown
         if self.connection and not self.connection.is_closed:
             try:
-                self.connection.close()
+                await self.connection.close()
                 logging.info("[Consumer] Connection closed")
             except Exception as e:
                 error_msg = f"[Consumer] Error closing connection: {e}"
                 logging.error(error_msg)
-                self._send_error_notification(error_msg)
+                #await self._send_error_notification(error_msg)
 
+
+async def main():
+    handler = RequestHandler()
+    await handler.start_consuming()
 
 if __name__ == "__main__":
-    handler = RequestHandler()
-    handler.start_consuming()
+    asyncio.run(main())
