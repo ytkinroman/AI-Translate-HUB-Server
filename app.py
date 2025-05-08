@@ -92,9 +92,21 @@ async def ping_connection(websocket: WebSocket, session_id: str):
         try:
             await sleep(WS_PING_INTERVAL)
             ping_start = time.time()
-            await websocket.ping()
             
-            # Если превысили таймаут
+            # Отправляем heartbeat сообщение
+            await websocket.send_json({"type": "ping"})
+            
+            # Ждем ответ не более WS_PING_TIMEOUT секунд
+            try:
+                data = await websocket.receive_json()
+                if data.get("type") != "pong":
+                    continue
+            except Exception as e:
+                logger.warning(f"No pong response received for session {session_id}: {str(e)}")
+                await websocket.close(code=1001)  # Going away
+                break
+                
+            # Проверяем таймаут
             if time.time() - ping_start > WS_PING_TIMEOUT:
                 logger.warning(f"WebSocket ping timeout for session {session_id}")
                 await websocket.close(code=1001)  # Going away
@@ -149,10 +161,14 @@ async def websocket_endpoint(websocket: WebSocket):
     
     try:
         while True:
-            data = await websocket.receive_text()
+            data = await websocket.receive_json()
             
-            # Обработка входящих WebSocket сообщений
-            await websocket.send_text(f"Message received: {data}")
+            # Если это pong сообщение, пропускаем его обработку
+            if data.get("type") == "pong":
+                continue
+                
+            # Обработка остальных входящих WebSocket сообщений
+            await websocket.send_text(f"Message received: {str(data)}")
             
     except WebSocketDisconnect:
         ping_task.cancel()  # Отменяем пинги при отключении
