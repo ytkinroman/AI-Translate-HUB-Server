@@ -12,15 +12,34 @@ from config import (
 logger = logging.getLogger(__name__)
 
 class MessageSender:
+    """
+    Класс для отправки сообщений через RabbitMQ.
+    
+    Обеспечивает асинхронную отправку сообщений в очереди RabbitMQ
+    с поддержкой различных типов сообщений (запросы на перевод,
+    результаты перевода и т.д.).
+
+    Поддерживает контекстный менеджер для автоматического управления
+    подключением к RabbitMQ.
+    """
+
     async def __aenter__(self):
+        """Метод контекстного менеджера для установки соединения"""
         await self.connect()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Метод контекстного менеджера для закрытия соединения"""
         if self.connection and not self.connection.is_closed:
             await self.connection.close()
             
     def __init__(self, host: str = RMQ_HOST, port: int = RMQ_PORT):
+        """
+        Инициализация отправителя сообщений.
+
+        :param host: Хост RabbitMQ сервера
+        :param port: Порт RabbitMQ сервера
+        """
         self.host = host
         self.port = port
         self.connection: Optional[aio_pika.Connection] = None
@@ -53,7 +72,7 @@ class MessageSender:
             ),
             routing_key=queue
         )
-        logger.info(f"Sent message to queue {queue}")
+        logger.info(f"Отправлено сообщение в очередь {queue}")
 
     async def send_result(self, ws_session_id: str, result: Dict[str, Any]):
         if not self.connection or self.connection.is_closed:
@@ -71,12 +90,12 @@ class MessageSender:
             ),
             routing_key=RESULT_QUEUE
         )
-        logger.info(f"Sent result for session {ws_session_id}")
+        logger.info(f"Отправлен результат для сессии {ws_session_id}")
 
     async def close(self):
         if self.connection and not self.connection.is_closed:
             await self.connection.close()
-            logger.info("MessageSender connection closed")
+            logger.info("Соединение MessageSender закрыто")
 
     def send(self, message: Message):
         queue = message.get_queue()
@@ -90,7 +109,7 @@ class MessageSender:
             body=data
         )
 
-        logger.info(f"Sent message to queue {queue}: '{data}'")
+        logger.info(f"Отправлено сообщение в очередь {queue}: '{data}'")
 
         # Закрытие соединения
         self.connection.close()

@@ -1,14 +1,12 @@
 import json
-import logging
 import signal
-import time
-from typing import Dict, Any
-
+import asyncio
+import logging
 import aio_pika
 from jsonrpcserver import dispatch
 from handlers.services_handler import translate
 from transport.rabbitmq.MessageSender import MessageSender
-import asyncio
+
 from config import (
     RMQ_HOST as RABBIT_HOST,
     RMQ_PORT as RABBIT_PORT,
@@ -25,7 +23,23 @@ logging.basicConfig(
 )
 
 class RequestHandler:
+    """
+    Обработчик запросов на перевод текста.
+    
+    Класс отвечает за:
+    - Прослушивание очереди RabbitMQ для получения запросов на перевод
+    - Обработку входящих сообщений и их валидацию
+    - Отправку результатов перевода обратно через WebSocket
+    - Корректное завершение работы при получении сигналов остановки
+    
+    Использует JSON-RPC для обработки запросов и aio-pika для работы с RabbitMQ.
+    """
+    
     def __init__(self):
+        """
+        Инициализация обработчика запросов.
+        Устанавливает обработчики сигналов для корректного завершения работы.
+        """
         self.connection = None
         self.channel = None
         self.should_stop = False
@@ -36,31 +50,17 @@ class RequestHandler:
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
 
-    # async def _send_error_notification(self, error_message: str):
-    #     """Отправка уведомления об ошибке через очередь requests"""
-    #     message = {
-    #         'service': 'telegram',
-    #         'chat_id': None,  # Будет использоваться DEBUG_RECIPIENTS из конфига
-    #         'payload': error_message,
-    #         'message_id': str(time.time())  # Используем время как уникальный ID
-    #     }
-    #     try:
-    #         async with MessageSender() as sender:
-    #             await sender.send_message(message)
-    #     except Exception as e:
-    #         logging.error(f"Failed to send error notification: {e}")
-
     def _signal_handler(self, signum, frame):
-        """Обработчик сигналов"""
-        message = f"Received signal {signum}. Starting graceful shutdown..."
+        """
+        Обработчик сигналов завершения работы.
+        Обеспечивает корректное закрытие соединений при остановке сервиса.
+        """
+        message = f"Получен сигнал {signum}. Начинаем корректное завершение работы..."
         logging.info(message)
         
         # Создаем новый event loop для асинхронных вызовов в синхронном контексте
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
-        # Запускаем асинхронное уведомление об ошибке
-        #loop.run_until_complete(self._send_error_notification(message))
         
         self.should_stop = True
         if self.connection and not self.connection.is_closed:
@@ -76,17 +76,13 @@ class RequestHandler:
                 params = json.loads(message.body.decode())
                 method_name = params.get('method')
                 connection_id = params.get('ws_session_id')
-                payload = params.get('payload', {})  # Создаем копию, чтобы не изменять оригинал
+                payload = params.get('payload', {})
                 
-                # Переименовываем translator_type в translator_code если есть
-                if 'translator_type' in payload:
-                    payload['translator_code'] = payload.pop('translator_type')
                 service = params.get('queue', '')
                 
                 if not method_name or not connection_id or not payload:
-                    error_msg = "[Handler] Missing required fields: 'method', 'ws_session_id' or 'payload'"
+                    error_msg = "[Обработчик] Отсутствуют обязательные поля: 'method', 'ws_session_id' или 'payload'"
                     logging.error(error_msg)
-                    #await self._send_error_notification(error_msg)
                     return
 
                 rpc = json.dumps({
@@ -98,7 +94,7 @@ class RequestHandler:
                     "id": '1'
                 })
                 
-                logging.info(f"[Handler] Dispatching RPC: {rpc}")
+                logging.info(f"[Обработчик] Отправка RPC запроса: {rpc}")
                 response = dispatch(rpc, context=self)
                 resp_str = str(response)
 
@@ -116,20 +112,17 @@ class RequestHandler:
                                 async with MessageSender() as sender:
                                     await sender.send_message(res_message)
                         else:
-                            error_msg = f"[Handler] Error from service: {resp.get('error')}"
+                            error_msg = f"[Обработчик] Ошибка от сервиса: {resp.get('error')}"
                             logging.error(error_msg)
-                            #await self._send_error_notification(error_msg)
                     except json.JSONDecodeError as e:
-                        error_msg = f"[Handler] Error parsing response: {e}"
+                        error_msg = f"[Обработчик] Ошибка разбора ответа: {e}"
                         logging.error(error_msg)
-                        #await self._send_error_notification(error_msg)
                 else:
-                    logging.info("[Handler] Notification (no response expected)")
+                    logging.info("[Обработчик] Уведомление (ответ не ожидается)")
 
         except Exception as e:
-            error_msg = f"[Handler] Exception: {e}"
+            error_msg = f"[Обработчик] Исключение: {e}"
             logging.exception(error_msg)
-            #await self._send_error_notification(error_msg)
             await message.reject(requeue=False)
 
     async def start_consuming(self):
@@ -146,7 +139,7 @@ class RequestHandler:
                 # Объявляем очередь
                 queue = await self.channel.declare_queue(WORK_QUEUE, durable=True)
                 
-                logging.info("[Consumer] Waiting for messages. To exit press CTRL+C")
+                logging.info("[Консьюмер] Ожидание сообщений. Для выхода нажмите CTRL+C")
                 
                 async with queue.iterator() as queue_iter:
                     async for message in queue_iter:
@@ -156,16 +149,14 @@ class RequestHandler:
 
             except aio_pika.exceptions.CONNECTION_EXCEPTIONS:
                 if not self.should_stop:
-                    error_msg = "[Consumer] Connection was lost, retrying..."
+                    error_msg = "[Консьюмер] Соединение потеряно, пытаемся переподключиться..."
                     logging.warning(error_msg)
-                    #await self._send_error_notification(error_msg)
                     await asyncio.sleep(5)
                     continue
 
             except Exception as e:
-                error_msg = f"[Consumer] Unexpected error: {e}"
+                error_msg = f"[Консьюмер] Неожиданная ошибка: {e}"
                 logging.exception(error_msg)
-                #await self._send_error_notification(error_msg)
                 if not self.should_stop:
                     await asyncio.sleep(5)
                     continue
@@ -178,11 +169,10 @@ class RequestHandler:
         if self.connection and not self.connection.is_closed:
             try:
                 await self.connection.close()
-                logging.info("[Consumer] Connection closed")
+                logging.info("[Консьюмер] Соединение закрыто")
             except Exception as e:
-                error_msg = f"[Consumer] Error closing connection: {e}"
+                error_msg = f"[Консьюмер] Ошибка при закрытии соединения: {e}"
                 logging.error(error_msg)
-                #await self._send_error_notification(error_msg)
 
 
 async def main():
