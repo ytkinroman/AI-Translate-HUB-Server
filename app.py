@@ -16,6 +16,7 @@ from config import (
     WS_PING_TIMEOUT,
     MAX_CONNECTIONS,
     WS_PING_INTERVAL,
+    TRANSLATION_QUEUE
 )
 
 # Хранение активных WebSocket соединений локально
@@ -27,9 +28,14 @@ logger = logging.getLogger(__name__)
 
 message_sender = MessageSender()
 
-class TranslationRequest(BaseModel):
+class TranslationPayload(BaseModel):
     text: str
-    translator_type: str
+    translator_code: str
+    target_lang: str
+    source_lang: str = None  # Необязательный параметр, по умолчанию None
+class TranslationRequest(BaseModel):
+    method: str
+    payload: TranslationPayload
     ws_session_id: str
 
 app = FastAPI()
@@ -51,10 +57,13 @@ async def translate_text(request: TranslationRequest):
             return {"status": "error", "message": "Invalid session ID"}
             
         # Отправляем запрос через MessageSender
-        await message_sender.send_translation_request(
-            text=request.text,
-            translator_type=request.translator_type,
-            ws_session_id=request.ws_session_id
+        await message_sender.send_message(
+            {
+                "payload": request.payload.dict(),
+                "method": request.method,
+                "ws_session_id": request.ws_session_id,
+                "queue": TRANSLATION_QUEUE
+            }
         )
         return {"status": "success", "message": "Translation request accepted"}
     except Exception as e:
