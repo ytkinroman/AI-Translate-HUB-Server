@@ -2,7 +2,14 @@ import logging
 from jsonrpcserver import method, Success, Error
 
 
-def import_module(name):
+def import_module(name: str) -> object:
+    """
+    Динамически импортирует модуль по его полному имени.
+
+    :param name: Полное имя модуля в формате 'package.subpackage.module'
+    :return: Импортированный модуль
+    :raises ImportError: если модуль не может быть импортирован
+    """
     components = name.split('.')
     mod = __import__(components[0])
     for comp in components[1:]:
@@ -12,12 +19,22 @@ def import_module(name):
 @method
 def translate(context: object, payload: dict):
     """
-        Метод вызывает переводчик текста
+    RPC метод для выполнения перевода текста.
+    
+    Создает экземпляр соответствующего переводчика и выполняет перевод
+    с указанными параметрами. Поддерживает все доступные сервисы перевода
+    (Google, Yandex, DeepL).
 
-        :param context: Экземпляр Worker
-        :param payload: {"jsonrpc": "2.0", "method": "translate", "params": {"payload": {"text": "Hello", "target_lang": "??ru??", "translator_code": "yandex", "source_lang": "en"},"id": 1}
-        :param method: Имя метода для вызова
-        :return: Результат работы функции в формате JSON-строки
+    :param context: Экземпляр обработчика запросов
+    :param payload: Параметры для перевода:
+        {
+            "text": str,          # текст для перевода
+            "target_lang": str,   # целевой язык перевода
+            "translator_code": str,# код переводчика (yandex/google/deepl)
+            "source_lang": str    # исходный язык (опционально)
+        }
+    :return: В случае успеха - объект Success с результатом перевода
+             В случае ошибки - объект Error с описанием проблемы
     """
 
     cmd_class_name = "TranslatorProvider"
@@ -28,12 +45,11 @@ def translate(context: object, payload: dict):
         return Error(code=500, message="[RPC_Translate] Internal server error: Контекст (Экземпляр воркера) не укзан")
 
     try:
-        params = dict(payload.get('params')).get('payload')
-        if not params:
-            logging.error("[RPC_Translate] Не указаны параметры для перевода")
+        if not payload:
+            logging.error(f"[RPC_Translate] Не указаны параметры для перевода: '{payload}'")
             return Error(code=500, message="[RPC_Translate] Internal server error: Не указаны параметры для перевода")
         
-        logging.info(f"[RPC_Translate] Параметры: {params}")
+        logging.info(f"[RPC_Translate] Параметры: {payload}")
         
         cmd_module = import_module(cmd)
 
@@ -41,7 +57,7 @@ def translate(context: object, payload: dict):
             cmd_class = getattr(cmd_module, cmd_class_name)
             cmd_instance = cmd_class()
 
-            result = cmd_instance.execute(params)
+            result = cmd_instance.execute(payload)
             
             if 'error' in result:
                 logging.error(f"[RPC_Translate] Ошибка: {result['error']}")
@@ -59,16 +75,25 @@ def translate(context: object, payload: dict):
 @method
 def telegram(context: object = None, payload: dict = {}):
     """
-        Метод вызывает команду Telegram
+    RPC метод для обработки команд Telegram.
+    
+    Обрабатывает входящие команды от Telegram бота и возвращает
+    соответствующий результат через API Telegram.
 
-        :param context:  Экземпляр Worker
-        :param payload:  {"jsonrpc": "2.0", "method": "transcribe", "params": {"payload": {"chat_id": "845512132", "file_path"}},"id": 1}
-        :param method: Имя метода для вызова
-        :return: str: Результат работы функции в формате JSON-строки
+    :param context: Экземпляр обработчика запросов
+    :param payload: Параметры команды в формате:
+        {
+            "chat_id": str,    # ID чата для ответа
+            "command": str,    # команда для выполнения
+            "text": str,       # текст сообщения (опционально)
+            "file_path": str   # путь к файлу (опционально)
+        }
+    :return: В случае успеха - объект Success с результатом выполнения команды
+             В случае ошибки - объект Error с описанием проблемы
     """
 
-    cmd_class_name = "CmdTelegram"
-    cmd = "JSON_RPC.commands.telegram"
+    cmd_class_name = "TelegramProvider"
+    cmd = "services.telegram.TelegramProvider"
 
     try:
         params = dict()
@@ -83,15 +108,14 @@ def telegram(context: object = None, payload: dict = {}):
             result = cmd_instance.Execute(params)
 
             if type(result) == Error:
-                logging.error(f"[RPC_Telegram] Error: {result.message}")
-
-                _ = cmd_instance.Execute({"message": "Error: " + result.message, "command": "send_message"})
+                logging.error(f"[RPC_Telegram] Ошибка: {result.message}")
+                _ = cmd_instance.Execute({"message": "Ошибка: " + result.message, "command": "send_message"})
 
             return result
         else:
-            logging.error(f"[RPC_Telegram] Command class {cmd_class_name} not found in module {cmd}")
-            return Error(code=500, message=f"Command class {cmd_class_name} not found")
+            logging.error(f"[RPC_Telegram] Класс обработчика {cmd_class_name} не найден в модуле {cmd}")
+            return Error(code=500, message=f"Класс обработчика {cmd_class_name} не найден")
 
     except Exception as e:
-        logging.error(f"[RPC_Telegram] Error: {e}")
-        return Error(code=500, message=str(e))
+        logging.error(f"[RPC_Telegram] Ошибка: {e}")
+        return Error(code=500, message=f"Внутренняя ошибка сервера: {str(e)}")

@@ -2,16 +2,19 @@ import json
 import logging
 import signal
 import time
+import aiohttp
+import asyncio
 import pika
-from fastapi import WebSocket
 
 from config import (
-    RABBIT_HOST,
-    RABBIT_PORT,
-    RABBIT_USER,
-    RABBIT_PASSWORD,
+    RMQ_HOST as RABBIT_HOST,
+    RMQ_PORT as RABBIT_PORT,
+    RMQ_USERNAME as RABBIT_USER,
+    RMQ_PASSWORD as RABBIT_PASSWORD,
+    RESULT_QUEUE,
+    APP_HOST,
+    APP_PORT
 )
-from transport.redis.redis_client import check_connection
 
 # Настройка логирования
 logging.basicConfig(
@@ -19,11 +22,26 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# Название очереди результатов
-RESULT_QUEUE = 'results'
 
 class ResultHandler:
+    """
+    Обработчик результатов перевода.
+    
+    Класс отвечает за:
+    - Получение результатов перевода из очереди RabbitMQ
+    - Отправку результатов клиентам через HTTP
+    - Подтверждение обработки сообщений
+    - Корректное завершение работы при получении сигналов остановки
+    
+    Использует блокирующее подключение к RabbitMQ и асинхронные HTTP запросы
+    для отправки результатов.
+    """
+    
     def __init__(self):
+        """
+        Инициализация обработчика результатов.
+        Устанавливает обработчики сигналов и создает подключение к RabbitMQ.
+        """
         self.connection = None
         self.channel = None
         self.should_stop = False
@@ -37,7 +55,7 @@ class ResultHandler:
 
     def _signal_handler(self, signum, frame):
         """Обработчик сигналов"""
-        message = f"Received signal {signum}. Starting graceful shutdown..."
+        message = f"Получен сигнал {signum}. Начинаем корректное завершение работы..."
         logging.info(message)
         self.should_stop = True
         if self.connection and not self.connection.is_closed:
@@ -60,12 +78,12 @@ class ResultHandler:
                 self.channel = self.connection.channel()
                 self.channel.queue_declare(queue=RESULT_QUEUE, durable=True)
                 self.channel.basic_qos(prefetch_count=1)
-                logging.info("Successfully connected to RabbitMQ")
+                logging.info("Успешно подключено к RabbitMQ")
                 return True
             except Exception as e:
                 if self.should_stop:
                     break
-                error_msg = f"Failed to connect to RabbitMQ: {e}"
+                error_msg = f"Не удалось подключиться к RabbitMQ: {e}"
                 logging.error(error_msg)
                 time.sleep(5)
         return False
@@ -79,33 +97,52 @@ class ResultHandler:
             result = message.get('result')
             
             if not connection_id or result is None:
-                error_msg = "[Handler] Missing 'connection_id' or 'result'"
+                error_msg = "[Обработчик] Отсутствует 'connection_id' или 'result'"
                 logging.error(error_msg)
                 ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
                 return
 
-            # Проверяем существование соединения в Redis
-            if check_connection(connection_id):
-                try:
-                    # В этом месте websocket должен быть получен из активных соединений app.py
-                    # Но так как сервисы независимы, это невозможно
-                    # Поэтому мы просто подтверждаем получение сообщения
-                    logging.info(f"[Handler] Connection {connection_id} exists in Redis")
+            # Отправляем результат через HTTP
+            try:
+                # Создаем новый event loop для асинхронного HTTP запроса
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                async def send_result():
+                    async with aiohttp.ClientSession() as session:
+                        url = f"http://{APP_HOST}:{APP_PORT}/translation-result"
+                        payload = {
+                            "connection_id": connection_id,
+                            "result": result
+                        }
+                        async with session.post(url, json=payload) as response:
+                            if response.status == 200:
+                                logging.info(f"[Обработчик] Успешно отправлен результат для соединения {connection_id}")
+                                return True
+                            else:
+                                error_text = await response.text()
+                                logging.error(f"[Обработчик] Не удалось отправить результат. Статус: {response.status}, Ошибка: {error_text}")
+                                return False
+                
+                success = loop.run_until_complete(send_result())
+                if success:
                     ch.basic_ack(delivery_tag=method.delivery_tag)
-                except Exception as ws_error:
-                    logging.error(f"[Handler] Failed to process result: {ws_error}")
+                else:
                     ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-            else:
-                logging.warning(f"[Handler] Connection {connection_id} not found in Redis")
+                    
+            except Exception as e:
+                logging.error(f"[Обработчик] Не удалось отправить результат: {e}")
                 ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+            finally:
+                loop.close()
                 
         except json.JSONDecodeError as e:
-            error_msg = f"[Handler] Invalid JSON in message: {e}"
+            error_msg = f"[Обработчик] Некорректный JSON в сообщении: {e}"
             logging.error(error_msg)
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
             
         except Exception as e:
-            error_msg = f"[Handler] Error processing result: {e}"
+            error_msg = f"[Обработчик] Ошибка обработки результата: {e}"
             logging.error(error_msg)
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
@@ -121,25 +158,25 @@ class ResultHandler:
                     queue=RESULT_QUEUE,
                     on_message_callback=self._on_message
                 )
-                logging.info("[Consumer] Waiting for results. To exit press CTRL+C")
+                logging.info("[Консьюмер] Ожидание результатов. Для выхода нажмите CTRL+C")
                 self.channel.start_consuming()
 
             except pika.exceptions.ConnectionClosedByBroker:
                 if not self.should_stop:
-                    logging.warning("[Consumer] Connection was closed by broker, retrying...")
+                    logging.warning("[Консьюмер] Соединение закрыто брокером, пытаемся переподключиться...")
                     continue
 
             except pika.exceptions.AMQPChannelError as e:
-                logging.error(f"[Consumer] Channel error: {e}, stopping...")
+                logging.error(f"[Консьюмер] Ошибка канала: {e}, останавливаемся...")
                 break
 
             except pika.exceptions.AMQPConnectionError:
                 if not self.should_stop:
-                    logging.warning("[Consumer] Connection was lost, retrying...")
+                    logging.warning("[Консьюмер] Соединение потеряно, пытаемся переподключиться...")
                     continue
 
             except Exception as e:
-                logging.exception(f"[Consumer] Unexpected error: {e}")
+                logging.exception(f"[Консьюмер] Неожиданная ошибка: {e}")
                 if not self.should_stop:
                     time.sleep(5)
                     continue
@@ -152,6 +189,10 @@ class ResultHandler:
         if self.connection and not self.connection.is_closed:
             try:
                 self.connection.close()
-                logging.info("[Consumer] Connection closed")
+                logging.info("[Консьюмер] Соединение закрыто")
             except Exception as e:
-                logging.error(f"[Consumer] Error closing connection: {e}")
+                logging.error(f"[Консьюмер] Ошибка при закрытии соединения: {e}")
+
+if __name__ == "__main__":
+    handler = ResultHandler()
+    handler.start_consuming()
