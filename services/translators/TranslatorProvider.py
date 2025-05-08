@@ -1,7 +1,10 @@
+import logging
+
 class TranslatorProvider:
     def __init__(self):
         pass
     
+    @staticmethod
     def import_module(name):
         components = name.split('.')
         mod = __import__(components[0])
@@ -24,6 +27,8 @@ class TranslatorProvider:
             target_lang = params.get("target_lang")
             translator_code = params.get("translator_code")
             
+            logging.info(f"[TranslatorProvider] Received params: text='{text}', target_lang='{target_lang}', translator_code='{translator_code}'")
+            
             #endregion
             
             #region Проверяем наличие необходимых параметров
@@ -41,16 +46,17 @@ class TranslatorProvider:
             
             #region Импортируем класс переводчика
             translator_class = f"services.translators.{translator_code}.{translator_code.capitalize()}Translator"
-            translator = self.import_module(translator_class)
+            translator = TranslatorProvider.import_module(translator_class)
             translator_instance = translator()
             #endregion
             
-            # Удаляем не нужный ключ
-            params.pop("translator_code")
-            
             # Выполняем перевод
+            logging.info(f"[TranslatorProvider] Executing translation with translator: {translator_class}")
             result = translator_instance.execute(params)
+            logging.info(f"[TranslatorProvider] Translation result: {result}")
             
             return result
         except Exception as e:
-            return {"error": f"Error: {str(e)}"}
+            error_msg = f"Error in TranslatorProvider: {str(e)}"
+            logging.error(error_msg)
+            return {"error": error_msg}
