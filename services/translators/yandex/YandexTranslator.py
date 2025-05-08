@@ -1,4 +1,5 @@
 import requests
+import logging
 from typing import Dict, Any
 from services.translators.BaseTranslator import BaseTranslator
 
@@ -18,8 +19,10 @@ class YandexTranslator(BaseTranslator):
 
     def execute(self, data: Dict[str, Any]) -> Dict[str, Any]:
         text = data.get('text', '')
-        source_lang = data.get('source_lang', '')
+        source_lang = data.get('source_lang')  # Убираем значение по умолчанию
         target_lang = data.get('target_lang', '')
+        
+        logging.info(f"[YandexTranslator] Received params: text='{text}', source_lang='{source_lang}', target_lang='{target_lang}'")
         
         if not text:
             return {"error": "No text provided"}
@@ -28,8 +31,9 @@ class YandexTranslator(BaseTranslator):
             return {"error": "Target language not specified"}
 
         try:
-            # Определяем язык исходного текста, если не указан
-            if not source_lang:
+            # Определяем язык исходного текста, если не указан или равен None
+            if source_lang is None or source_lang == '':
+                logging.info("[YandexTranslator] Source language not specified, detecting language...")
                 detect_response = requests.post(
                     self.detect_url,
                     headers={
@@ -46,6 +50,7 @@ class YandexTranslator(BaseTranslator):
                     }
 
                 source_lang = detect_response.json()['languageCode']
+                logging.info(f"[YandexTranslator] Detected source language: {source_lang}")
 
             # Выполняем перевод
             translate_response = requests.post(
@@ -63,6 +68,7 @@ class YandexTranslator(BaseTranslator):
 
             if translate_response.status_code == 200:
                 result = translate_response.json()
+                logging.info(f"[YandexTranslator] Translation successful: {result}")
                 return {
                     "result": {
                         "success": True,
@@ -80,4 +86,3 @@ class YandexTranslator(BaseTranslator):
                 "error": "Ошибка при выполнении перевода",
                 "details": str(e)
             }
-
