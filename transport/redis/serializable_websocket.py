@@ -28,3 +28,6 @@ class SerializableWebSocket:
     def __setstate__(self, state):
         """Восстанавливает объект при десериализации"""
         self._state = state
+    def get_ws(self) -> WebSocket:
+        """Возвращает оригинальный WebSocket объект"""
+        return self._ws
