@@ -138,7 +138,7 @@ Content-Type: application/json
 {
     "text": "Текст для перевода",
     "translator_type": "deepl",  // или "google", "yandex"
-    "source_lang": "auto",       // или конкретный код языка
+    "source_lang": "",       // можно не указывать или указать код языка
     "target_lang": "ru",        // целевой язык
     "ws_session_id": "id_сессии"
 }
