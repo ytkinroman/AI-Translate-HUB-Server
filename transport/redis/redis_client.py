@@ -9,7 +9,7 @@ redis_client = redis.Redis(
     host=REDIS_HOST,
     port=REDIS_PORT,
     db=REDIS_DB,
-    decode_responses=True
+    decode_responses=False
 )
 
 def _get_websocket_key(connection_id: str) -> str:
