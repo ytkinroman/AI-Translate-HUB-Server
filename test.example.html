@@ -175,12 +175,6 @@
                         wsSessionId = data.session_id;
                         return;
                     }
-                    
-                    // Обработка ping-сообщений
-                    if (data.type === "ping") {
-                        ws.send(JSON.stringify({type: "pong"}));
-                        return;
-                    }
 
                     loadingIndicator.style.display = 'none';
 

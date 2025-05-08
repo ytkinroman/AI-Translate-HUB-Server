@@ -13,9 +13,7 @@ from config import (
     LOG_LEVEL, 
     LOG_FORMAT,
     CORS_ORIGINS,
-    WS_PING_TIMEOUT,
     MAX_CONNECTIONS,
-    WS_PING_INTERVAL,
     TRANSLATION_QUEUE
 )
 
@@ -119,47 +117,6 @@ async def translate_text(request: TranslationRequest):
         logger.error(f"Ошибка в translate_text: {str(e)}")
         return {"status": "error", "message": str(e)}
 
-async def ping_connection(websocket: WebSocket, session_id: str):
-    """
-    Асинхронная функция для периодической проверки активности WebSocket соединения.
-    
-    Args:
-        websocket: Активное WebSocket соединение для проверки
-        session_id: Уникальный идентификатор сессии для логирования
-
-    Механизм работы:
-        - Отправляет ping-сообщение каждые WS_PING_INTERVAL секунд
-        - Если ответ не получен в течение WS_PING_TIMEOUT секунд, соединение закрывается
-        - Логирует все ошибки и таймауты для отладки
-    """
-    while True:
-        try:
-            await sleep(WS_PING_INTERVAL)
-            ping_start = time.time()
-            
-            # Отправляем heartbeat сообщение
-            await websocket.send_json({"type": "ping"})
-            
-            # Ждем ответ не более WS_PING_TIMEOUT секунд
-            try:
-                data = await websocket.receive_json()
-                if data.get("type") != "pong":
-                    continue
-            except Exception as e:
-                logger.warning(f"Не получен pong ответ для сессии {session_id}: {str(e)}")
-                await websocket.close(code=1001)  # Going away
-                break
-                
-            # Проверяем таймаут
-            if time.time() - ping_start > WS_PING_TIMEOUT:
-                logger.warning(f"WebSocket таймаут для сессии {session_id}")
-                await websocket.close(code=1001)  # Going away
-                break
-                
-        except Exception as e:
-            logger.error(f"Ошибка при пинге для сессии {session_id}: {str(e)}")
-            break
-
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """
@@ -172,9 +129,8 @@ async def websocket_endpoint(websocket: WebSocket):
         1. Проверяет лимит подключений (MAX_CONNECTIONS)
         2. Генерирует уникальный session_id
         3. Сохраняет соединение в active_connections и Redis
-        4. Запускает асинхронную задачу для проверки активности соединения
-        5. Обрабатывает входящие сообщения
-        6. Очищает ресурсы при отключении
+        4. Обрабатывает входящие сообщения
+        5. Очищает ресурсы при отключении
     """
     # Проверяем лимит подключений
     if len(active_connections) >= MAX_CONNECTIONS:
@@ -185,33 +141,31 @@ async def websocket_endpoint(websocket: WebSocket):
     
     # Генерируем UUID для сессии
     session_id = str(uuid.uuid4())
-    # Сохраняем websocket локально и id в Redis
-    active_connections[session_id] = websocket
-    store_connection(session_id)
-
-    # Отправляем ID сессии клиенту
-    await websocket.send_json({
-        "type": "connection_established",
-        "session_id": session_id
-    })
-    
-    # Создаем задачу для пинга соединения
-    ping_task = create_task(ping_connection(websocket, session_id))
     
     try:
+        # Сохраняем websocket локально и id в Redis
+        active_connections[session_id] = websocket
+        store_connection(session_id)
+
+        # Отправляем ID сессии клиенту
+        await websocket.send_json({
+            "type": "connection_established",
+            "session_id": session_id
+        })
+        
+        # Обрабатываем входящие сообщения
         while True:
             data = await websocket.receive_json()
-            
-            # Если это pong сообщение, пропускаем его обработку
-            if data.get("type") == "pong":
-                continue
-                
-            # Обработка остальных входящих WebSocket сообщений
             await websocket.send_text(f"Получено сообщение: {str(data)}")
             
     except WebSocketDisconnect:
-        ping_task.cancel()  # Отменяем пинги при отключении
-        del active_connections[session_id]
+        logger.info(f"Соединение закрыто для сессии {session_id}")
+    except Exception as e:
+        logger.error(f"Ошибка в websocket_endpoint для сессии {session_id}: {str(e)}")
+    finally:
+        # Очищаем ресурсы при любом типе отключения
+        if session_id in active_connections:
+            del active_connections[session_id]
         remove_connection(session_id)
         
 @app.post("/translation-result")
