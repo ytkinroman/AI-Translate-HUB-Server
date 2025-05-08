@@ -40,11 +40,6 @@ LOG_LEVEL = "INFO"  # Уровень логирования (DEBUG, INFO, WARNIN
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"  # Формат логов
 #endregion <<  Настройки логирования >>
 
-#region <<  Настройки WebSocket >>
-WS_PING_INTERVAL = 10  # Интервал пинга WebSocket соединения в секундах
-WS_PING_TIMEOUT = 22   # Таймаут ожидания ответа на пинг в секундах
-#endregion <<  Настройки WebSocket >>
-
 #region <<  Настройки безопасности >>
 CORS_ORIGINS = ["*"]  # Список разрешенных источников для CORS
 MAX_CONNECTIONS = 100  # Максимальное количество одновременных WebSocket соединений
