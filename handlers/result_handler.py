@@ -2,6 +2,7 @@ import json
 import logging
 import signal
 import time
+import asyncio
 import pika
 from fastapi import WebSocket
 
@@ -10,8 +11,9 @@ from config import (
     RMQ_PORT as RABBIT_PORT,
     RMQ_USERNAME as RABBIT_USER,
     RMQ_PASSWORD as RABBIT_PASSWORD,
+    RESULT_QUEUE
 )
-from transport.redis.redis_client import check_connection
+from transport.redis.redis_client import check_connection, get_connection
 
 # Настройка логирования
 logging.basicConfig(
@@ -19,8 +21,6 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# Название очереди результатов
-RESULT_QUEUE = 'results'
 
 class ResultHandler:
     def __init__(self):
@@ -91,7 +91,26 @@ class ResultHandler:
                     # Но так как сервисы независимы, это невозможно
                     # Поэтому мы просто подтверждаем получение сообщения
                     logging.info(f"[Handler] Connection {connection_id} exists in Redis")
-                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                    websocket = get_connection(connection_id)
+                    logging.info(f"[Handler] websocket object: '{websocket}'")
+                    if websocket:
+                        # Создаем новый event loop для асинхронной отправки
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        # Отправляем результат в WebSocket
+                        try:
+                            loop.run_until_complete(websocket.send_json(result))
+                            logging.info(f"[Handler] Sent result to connection {connection_id}")
+                            ch.basic_ack(delivery_tag=method.delivery_tag)
+                        except Exception as e:
+                            logging.error(f"[Handler] Failed to send result: {e}")
+                            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                        finally:
+                            loop.close()
+                    else:
+                        logging.warning(f"[Handler] WebSocket for connection {connection_id} not found")
+                        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                        return
                 except Exception as ws_error:
                     logging.error(f"[Handler] Failed to process result: {ws_error}")
                     ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
