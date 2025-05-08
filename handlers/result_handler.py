@@ -2,18 +2,19 @@ import json
 import logging
 import signal
 import time
+import aiohttp
 import asyncio
 import pika
-from fastapi import WebSocket
 
 from config import (
     RMQ_HOST as RABBIT_HOST,
     RMQ_PORT as RABBIT_PORT,
     RMQ_USERNAME as RABBIT_USER,
     RMQ_PASSWORD as RABBIT_PASSWORD,
-    RESULT_QUEUE
+    RESULT_QUEUE,
+    APP_HOST,
+    APP_PORT
 )
-from transport.redis.redis_client import check_connection, get_connection
 
 # Настройка логирования
 logging.basicConfig(
@@ -84,39 +85,39 @@ class ResultHandler:
                 ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
                 return
 
-            # Проверяем существование соединения в Redis
-            if check_connection(connection_id):
-                try:
-                    # В этом месте websocket должен быть получен из активных соединений app.py
-                    # Но так как сервисы независимы, это невозможно
-                    # Поэтому мы просто подтверждаем получение сообщения
-                    logging.info(f"[Handler] Connection {connection_id} exists in Redis")
-                    websocket = get_connection(connection_id)
-                    logging.info(f"[Handler] websocket object: '{websocket}'")
-                    if websocket:
-                        # Создаем новый event loop для асинхронной отправки
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        # Отправляем результат в WebSocket
-                        try:
-                            loop.run_until_complete(websocket.send_json(result))
-                            logging.info(f"[Handler] Sent result to connection {connection_id}")
-                            ch.basic_ack(delivery_tag=method.delivery_tag)
-                        except Exception as e:
-                            logging.error(f"[Handler] Failed to send result: {e}")
-                            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-                        finally:
-                            loop.close()
-                    else:
-                        logging.warning(f"[Handler] WebSocket for connection {connection_id} not found")
-                        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-                        return
-                except Exception as ws_error:
-                    logging.error(f"[Handler] Failed to process result: {ws_error}")
+            # Отправляем результат через HTTP
+            try:
+                # Создаем новый event loop для асинхронного HTTP запроса
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                async def send_result():
+                    async with aiohttp.ClientSession() as session:
+                        url = f"http://{APP_HOST}:{APP_PORT}/translation-result"
+                        payload = {
+                            "connection_id": connection_id,
+                            "result": result
+                        }
+                        async with session.post(url, json=payload) as response:
+                            if response.status == 200:
+                                logging.info(f"[Handler] Successfully sent result to connection {connection_id}")
+                                return True
+                            else:
+                                error_text = await response.text()
+                                logging.error(f"[Handler] Failed to send result. Status: {response.status}, Error: {error_text}")
+                                return False
+                
+                success = loop.run_until_complete(send_result())
+                if success:
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                else:
                     ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-            else:
-                logging.warning(f"[Handler] Connection {connection_id} not found in Redis")
+                    
+            except Exception as e:
+                logging.error(f"[Handler] Failed to send result: {e}")
                 ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+            finally:
+                loop.close()
                 
         except json.JSONDecodeError as e:
             error_msg = f"[Handler] Invalid JSON in message: {e}"
