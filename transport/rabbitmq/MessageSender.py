@@ -12,6 +12,14 @@ from config import (
 logger = logging.getLogger(__name__)
 
 class MessageSender:
+    async def __aenter__(self):
+        await self.connect()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.connection and not self.connection.is_closed:
+            await self.connection.close()
+            
     def __init__(self, host: str = RMQ_HOST, port: int = RMQ_PORT):
         self.host = host
         self.port = port
@@ -31,24 +39,21 @@ class MessageSender:
             durable=True
         )
 
-    async def send_translation_request(self, text: str, translator_type: str, ws_session_id: str):
+    async def send_message(self, message: dict):
         if not self.connection or self.connection.is_closed:
             await self.connect()
 
-        message = {
-            "text": text,
-            "type": translator_type,
-            "ws_session_id": ws_session_id
-        }
+        # Определяем очередь из сообщения или используем очередь по умолчанию
+        queue = message.pop("queue", TRANSLATION_QUEUE) if isinstance(message, dict) else TRANSLATION_QUEUE
 
         await self.channel.default_exchange.publish(
             aio_pika.Message(
                 body=json.dumps(message).encode(),
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT
             ),
-            routing_key=TRANSLATION_QUEUE
+            routing_key=queue
         )
-        logger.info(f"Sent translation request for session {ws_session_id}")
+        logger.info(f"Sent message to queue {queue}")
 
     async def send_result(self, ws_session_id: str, result: Dict[str, Any]):
         if not self.connection or self.connection.is_closed:
