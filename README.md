@@ -91,20 +91,70 @@ pip install -r requirements.txt
      - Настройки безопасности
      - Параметры логирования
 
+## Установка и настройка зависимых сервисов
+
+Для запуска Redis и RabbitMQ рекомендуется использовать Docker.
+
+### Установка Docker
+
+1. Установите Docker с [официального сайта](https://docs.docker.com/get-docker/)
+2. Убедитесь, что Docker запущен:
+```bash
+docker --version
+```
+
+### Запуск Redis
+
+1. Запустите Redis в контейнере:
+```bash
+docker run -d \
+  --name redis \
+  -p 6379:6379 \
+  -v redis_data:/data \
+  --restart unless-stopped \
+  redis:7.2
+```
+
+2. Проверьте статус:
+```bash
+docker ps | grep redis
+```
+
+### Запуск RabbitMQ
+
+1. Запустите RabbitMQ в контейнере:
+```bash
+docker run -d \
+  --name rabbitmq \
+  -p 5672:5672 \
+  -p 15672:15672 \
+  -e RABBITMQ_DEFAULT_USER=admin \
+  -e RABBITMQ_DEFAULT_PASS=your_secure_password \
+  --restart unless-stopped \
+  rabbitmq:3.12-management
+```
+
+2. Проверьте статус:
+```bash
+docker ps | grep rabbitmq
+```
+
+3. Веб-интерфейс RabbitMQ доступен по адресу: http://localhost:15672
+
 ## Запуск сервера
 
-1. Убедитесь, что необходимые сервисы запущены:
-   - RabbitMQ: `rabbitmq-server`
-   - Redis: `redis-server`
+1. Убедитесь, что контейнеры запущены:
+```bash
+docker ps | grep -E "redis|rabbitmq"
+```
 
 2. Запустите сервер:
 ```bash
-uvicorn app:app --reload --host 0.0.0.0 --port 8000 --workers 4
+uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Параметры запуска:
-- `--workers N` - количество воркеров uvicorn (рекомендуется: число_ядер * 2)
-- `NUM_WORKERS=N` - количество RabbitMQ воркеров (через переменную окружения)
+
 - `--reload` - автоперезагрузка при изменении кода (только для разработки)
 
 ## API
