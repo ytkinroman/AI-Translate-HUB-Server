@@ -152,9 +152,18 @@ docker ps | grep -E "redis|rabbitmq"
 ```bash
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
-
 Параметры запуска:
 - `--reload` - автоперезагрузка при изменении кода (только для разработки)
+
+3. Запустите обработчик сообщений на перевод
+```bash
+python -m handlers.request_handler
+```
+
+4. Запустите обработчик сообщений с результатами перевода
+```bash
+python -m handlers.result_handler
+```
 
 ## API
 
