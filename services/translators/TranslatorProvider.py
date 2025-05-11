@@ -1,4 +1,5 @@
 import logging
+from config import ALLOWED_TRANSLATORS
 
 class TranslatorProvider:
     """
@@ -12,9 +13,6 @@ class TranslatorProvider:
     Поддерживает подключение различных сервисов перевода (Google, Yandex, DeepL)
     через единый интерфейс, обеспечивая гибкость в выборе сервиса перевода.
     """
-    
-    # Список разрешенных переводчиков
-    ALLOWED_TRANSLATORS = ['yandex']
     
     def __init__(self):
         """
@@ -79,8 +77,8 @@ class TranslatorProvider:
                 return {"error": "Не указан переводчик"}
             
             # Проверка на разрешенный переводчик
-            if translator_code not in self.ALLOWED_TRANSLATORS:
-                return {"error": f"Переводчик '{translator_code}' временно недоступен. Доступные переводчики: {', '.join(self.ALLOWED_TRANSLATORS)}"}
+            if translator_code not in ALLOWED_TRANSLATORS:
+                return {"error": f"Переводчик '{translator_code}' временно недоступен. Доступные переводчики: {', '.join(ALLOWED_TRANSLATORS)}"}
             
             #endregion
             
