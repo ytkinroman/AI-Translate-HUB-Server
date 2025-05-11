@@ -162,9 +162,10 @@ class RequestHandler:
                         else:
                             error_msg = f"[Обработчик] Ошибка от сервиса: {resp.get('error')}"
                             logging.error(error_msg)
+                            
                             await self._send_error_message(
                                 connection_id=connection_id,
-                                message='Ошибка перевода! Сервис временно недоступен'
+                                message=resp.get('error').get('message', 'Ошибка перевода! Попробуйте повторить запрос позже')
                             )
                     except json.JSONDecodeError as e:
                         error_msg = f"[Обработчик] Ошибка разбора ответа: {e}"
