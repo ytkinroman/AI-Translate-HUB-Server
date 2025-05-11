@@ -75,6 +75,7 @@ class TranslationResult(BaseModel):
     """
     connection_id: str
     result: dict
+    error: str = None
 
 app = FastAPI()
 
@@ -195,7 +196,7 @@ async def handle_translation_result(result: TranslationResult):
             raise HTTPException(status_code=404, detail="WebSocket соединение не найдено")
             
         # Отправляем результат клиенту
-        await websocket.send_json(result.result)
+        await websocket.send_json({"connection_id": connection_id, "result": result.result, "error": result.error})
         return {"status": "success", "message": "Результат отправлен клиенту"}
         
     except Exception as e:
