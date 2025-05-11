@@ -13,6 +13,9 @@ class TranslatorProvider:
     через единый интерфейс, обеспечивая гибкость в выборе сервиса перевода.
     """
     
+    # Список разрешенных переводчиков
+    ALLOWED_TRANSLATORS = ['yandex']
+    
     def __init__(self):
         """
         Инициализация провайдера переводчиков.
@@ -74,6 +77,10 @@ class TranslatorProvider:
             
             if not translator_code:
                 return {"error": "Не указан переводчик"}
+            
+            # Проверка на разрешенный переводчик
+            if translator_code not in self.ALLOWED_TRANSLATORS:
+                return {"error": f"Переводчик '{translator_code}' временно недоступен. Доступные переводчики: {', '.join(self.ALLOWED_TRANSLATORS)}"}
             
             #endregion
             
