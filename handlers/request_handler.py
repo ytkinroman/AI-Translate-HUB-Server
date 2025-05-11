@@ -1,4 +1,5 @@
 import json
+import regex
 import signal
 import asyncio
 import logging
@@ -45,11 +46,30 @@ class RequestHandler:
         self.should_stop = False
         self._setup_signal_handlers()
 
+    def contains_letters_or_characters(self, text: str) -> bool:
+        """Проверяет наличие букв или иероглифов в тексте"""
+        # Проверяем наличие букв любого алфавита (включая кириллицу)
+        # или иероглифов (CJK Unicode blocks)
+        pattern = r'[\p{L}\p{Han}\p{Hiragana}\p{Katakana}]'
+        return bool(regex.search(pattern, text))
+
     def _setup_signal_handlers(self):
         """Настройка обработчиков сигналов для graceful shutdown"""
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
 
+    async def _send_error_message(self, connection_id: str, message: str):
+        """Отправка сообщения об ошибке в очередь результатов"""
+        error_message = {
+            'connection_id': connection_id,
+            'result': dict(),
+            'error': message,
+            'queue': RESULT_QUEUE
+        }
+        
+        async with MessageSender() as sender:
+            await sender.send_message(error_message)
+    
     def _signal_handler(self, signum, frame):
         """
         Обработчик сигналов завершения работы.
@@ -80,9 +100,36 @@ class RequestHandler:
                 
                 service = params.get('queue', '')
                 
+                # Проверка наличия обязательных полей
                 if not method_name or not connection_id or not payload:
                     error_msg = "[Обработчик] Отсутствуют обязательные поля: 'method', 'ws_session_id' или 'payload'"
                     logging.error(error_msg)
+                    if not payload:
+                        await self._send_error_message(
+                            connection_id=connection_id or 'unknown',
+                            message='Ошибка перевода! Не найден текст для перевода'
+                        )
+                    else:
+                        await self._send_error_message(
+                            connection_id=connection_id or 'unknown',
+                            message='Ошибка перевода! Некорректный формат запроса'
+                        )
+                    return
+
+                # Проверка содержимого текста
+                text = payload.get('text', '')
+                if not text:
+                    await self._send_error_message(
+                        connection_id=connection_id,
+                        message='Ошибка перевода! Не найден текст для перевода'
+                    )
+                    return
+                
+                if not self.contains_letters_or_characters(text):
+                    await self._send_error_message(
+                        connection_id=connection_id,
+                        message='Ошибка перевода! Текст должен содержать хотя бы одну букву или иероглиф'
+                    )
                     return
 
                 rpc = json.dumps({
@@ -105,7 +152,8 @@ class RequestHandler:
                             res_message = {
                                 'connection_id': connection_id,
                                 'result': resp['result'],
-                                'queue': RESULT_QUEUE
+                                'queue': RESULT_QUEUE,
+                                'error': ""
                             }
                             
                             if res_message['result'] and res_message['connection_id'] and service != 'telegram':
@@ -114,15 +162,31 @@ class RequestHandler:
                         else:
                             error_msg = f"[Обработчик] Ошибка от сервиса: {resp.get('error')}"
                             logging.error(error_msg)
+                            await self._send_error_message(
+                                connection_id=connection_id,
+                                message='Ошибка перевода! Сервис временно недоступен'
+                            )
                     except json.JSONDecodeError as e:
                         error_msg = f"[Обработчик] Ошибка разбора ответа: {e}"
                         logging.error(error_msg)
+                        await self._send_error_message(
+                            connection_id=connection_id,
+                            message='Ошибка перевода! Попробуйте повторить запрос позже'
+                        )
                 else:
                     logging.info("[Обработчик] Уведомление (ответ не ожидается)")
 
         except Exception as e:
             error_msg = f"[Обработчик] Исключение: {e}"
             logging.exception(error_msg)
+            try:
+                connection_id = json.loads(message.body.decode()).get('ws_session_id', 'unknown')
+                await self._send_error_message(
+                    connection_id=connection_id,
+                    message='Ошибка перевода! Попробуйте повторить запрос позже'
+                )
+            except:
+                logging.exception("Не удалось отправить сообщение об ошибке")
             await message.reject(requeue=False)
 
     async def start_consuming(self):
