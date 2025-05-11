@@ -71,3 +71,5 @@ APP_PORT = 8000        # Порт FastAPI сервера
 BOT_TOKEN = ""  # Токен бота, полученный от @BotFather
 DEBUG_RECIPIENTS = [""]  # Список ID пользователей для отправки отладочных сообщений
 #endregion << Telegram >>
+
+ALLOWED_TRANSLATORS = ['yandex']

@@ -1,4 +1,5 @@
 import logging
+from config import ALLOWED_TRANSLATORS
 
 class TranslatorProvider:
     """
@@ -74,6 +75,10 @@ class TranslatorProvider:
             
             if not translator_code:
                 return {"error": "Не указан переводчик"}
+            
+            # Проверка на разрешенный переводчик
+            if translator_code not in ALLOWED_TRANSLATORS:
+                return {"error": f"Переводчик '{translator_code}' временно недоступен. Доступные переводчики: {', '.join(ALLOWED_TRANSLATORS)}"}
             
             #endregion
             
