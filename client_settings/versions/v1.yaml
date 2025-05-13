@@ -1,0 +1,42 @@
+# Configuration file for translation client
+
+# Multi-language configuration for UI elements
+ru:
+  translators:
+    ardray1: АРДРЕЙ-ГПТ 2000.1
+    ardray2: ARDRAY 5000
+    yandex: Яндекс Переводчик
+    google: Google Translate
+    bing: Bing Translator
+    deepl: DeepL
+  languages:
+    ru: Русский
+    en: Английский
+    de: Немецкий
+    fr: Французский
+    es: Испанский
+    it: Итальянский
+    zh: Китайский
+    ja: Японский
+    ko: Корейский
+    ar: Арабский
+
+en:
+  translators:
+    ardray1: ARDRAY-GPT 2000.1
+    ardray2: ARDRAY 5000
+    yandex: Yandex Translate
+    google: Google Translate
+    bing: Bing Translator
+    deepl: DeepL
+  languages:
+    ru: Russian
+    en: English
+    de: German
+    fr: French
+    es: Spanish
+    it: Italian
+    zh: Chinese
+    ja: Japanese
+    ko: Korean
+    ar: Arabic

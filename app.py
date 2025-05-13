@@ -6,8 +6,9 @@ from pydantic import BaseModel
 from asyncio import create_task, sleep
 from fastapi.middleware.cors import CORSMiddleware
 from transport.rabbitmq.MessageSender import MessageSender
-from transport.redis.redis_client import store_connection, remove_connection, check_connection
+from client_settings.ClientSettingsProvider import ClientSettingsProvider
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from transport.redis.redis_client import store_connection, remove_connection, check_connection
 
 from config import (
     LOG_LEVEL, 
@@ -88,7 +89,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/translate")
+@app.get("/api/v1/get_config")
+async def get_config(ui_lang: str = "ru", version: str = "1"):
+    
+    settings_provider = ClientSettingsProvider(
+        params={
+            "ui_lang": ui_lang, 
+            "version": version
+        }
+    )
+    
+    return settings_provider.execute()
+
+@app.post("/api/v1/translate")
 async def translate_text(request: TranslationRequest):
     """
     Эндпоинт для приема запросов на перевод.
@@ -165,6 +178,7 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.error(f"Ошибка в websocket_endpoint для сессии {session_id}: {str(e)}")
     finally:
         # Очищаем ресурсы при любом типе отключения
+        logger.info(f"Удаление сессии {session_id}")
         if session_id in active_connections:
             del active_connections[session_id]
         remove_connection(session_id)
