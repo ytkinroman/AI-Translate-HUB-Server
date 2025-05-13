@@ -2,8 +2,6 @@ import aio_pika
 import json
 from typing import Optional, Dict, Any
 import logging
-
-from transport.rabbitmq.Message import Message
 from config import (
     RMQ_USERNAME, RMQ_PASSWORD, RMQ_HOST, RMQ_PORT,
     TRANSLATION_QUEUE, RESULT_QUEUE
@@ -96,20 +94,3 @@ class MessageSender:
         if self.connection and not self.connection.is_closed:
             await self.connection.close()
             logger.info("Соединение MessageSender закрыто")
-
-    def send(self, message: Message):
-        queue = message.get_queue()
-        self.channel.queue_declare(queue=queue)  # Создание очереди (если не существует)
-
-        data = message.get_data()
-
-        self.channel.basic_publish(
-            exchange='',
-            routing_key=queue,
-            body=data
-        )
-
-        logger.info(f"Отправлено сообщение в очередь {queue}: '{data}'")
-
-        # Закрытие соединения
-        self.connection.close()
