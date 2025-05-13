@@ -6,8 +6,9 @@ from pydantic import BaseModel
 from asyncio import create_task, sleep
 from fastapi.middleware.cors import CORSMiddleware
 from transport.rabbitmq.MessageSender import MessageSender
-from transport.redis.redis_client import store_connection, remove_connection, check_connection
+from client_settings.ClientSettingsProvider import ClientSettingsProvider
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from transport.redis.redis_client import store_connection, remove_connection, check_connection
 
 from config import (
     LOG_LEVEL, 
@@ -87,6 +88,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/api/v1/get_config")
+async def get_config(ui_lang: str = "ru", version: str = "1"):
+    
+    settings_provider = ClientSettingsProvider(
+        params={
+            "ui_lang": ui_lang, 
+            "version": version
+        }
+    )
+    
+    return settings_provider.execute()
 
 @app.post("/api/v1/translate")
 async def translate_text(request: TranslationRequest):
