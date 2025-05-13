@@ -88,7 +88,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/translate")
+@app.post("/api/v1/translate")
 async def translate_text(request: TranslationRequest):
     """
     Эндпоинт для приема запросов на перевод.
@@ -165,6 +165,7 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.error(f"Ошибка в websocket_endpoint для сессии {session_id}: {str(e)}")
     finally:
         # Очищаем ресурсы при любом типе отключения
+        logger.info(f"Удаление сессии {session_id}")
         if session_id in active_connections:
             del active_connections[session_id]
         remove_connection(session_id)
