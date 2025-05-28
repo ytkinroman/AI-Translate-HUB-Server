@@ -171,8 +171,8 @@
                 ws.onmessage = function(event) {
                     const data = JSON.parse(event.data);
                     
-                    if (data.type === "connection_established") {
-                        wsSessionId = data.session_id;
+                    if (data.type === "room_joined") {
+                        wsSessionId = data.room_id.replace("room_", "");
                         return;
                     }
 
