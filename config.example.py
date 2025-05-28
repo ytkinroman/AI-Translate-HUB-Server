@@ -72,4 +72,13 @@ BOT_TOKEN = ""  # Токен бота, полученный от @BotFather
 DEBUG_RECIPIENTS = [""]  # Список ID пользователей для отправки отладочных сообщений
 #endregion << Telegram >>
 
-ALLOWED_TRANSLATORS = ['yandex']
+#region << ArdreygptTranslator >>
+# Настройки для работы ArdreygptTranslator
+ARDREYGPT_MODE = "local"  # Режим работы: "local" или "remote"
+ARDREYGPT_REMOTE_URL = "http://localhost:5000/model_translate"  # URL удаленного сервера
+ARDREYGPT_MODEL_WEIGHTS = None  # Путь к файлу с весами модели (опционально)
+ARDREYGPT_TIMEOUT = 30  # Таймаут для запросов к удаленному серверу (в секундах)
+ARDREYGPT_CACHE_DIR = "models_cache"  # Директория для кэширования моделей
+#endregion << ArdreygptTranslator >>
+
+ALLOWED_TRANSLATORS = ['yandex', 'ardreygpt']
