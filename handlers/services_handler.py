@@ -52,12 +52,10 @@ def translate(context: object, payload: dict):
         logging.info(f"[RPC_Translate] Параметры: {payload}")
         
         cmd_module = import_module(cmd)
-
         if hasattr(cmd_module, cmd_class_name):
             cmd_class = getattr(cmd_module, cmd_class_name)
             cmd_instance = cmd_class()
-
-            result = cmd_instance.execute(payload)
+            result = cmd_instance.execute(payload, context=context)
             
             if 'error' in result:
                 logging.error(f"[RPC_Translate] Ошибка: {result['error']}")

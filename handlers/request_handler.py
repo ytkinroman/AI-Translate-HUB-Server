@@ -4,6 +4,9 @@ import signal
 import asyncio
 import logging
 import aio_pika
+import torch
+import warnings
+from transformers import M2M100ForConditionalGeneration, M2M100Tokenizer
 from jsonrpcserver import dispatch
 from handlers.services_handler import translate
 from transport.rabbitmq.MessageSender import MessageSender
@@ -14,7 +17,10 @@ from config import (
     RMQ_USERNAME as RABBIT_USER,
     RMQ_PASSWORD as RABBIT_PASSWORD,
     TRANSLATION_QUEUE as WORK_QUEUE,
-    RESULT_QUEUE
+    RESULT_QUEUE,
+    ARDREYGPT_MODE,
+    ARDREYGPT_CACHE_DIR,
+    ARDREYGPT_MODEL_WEIGHTS
 )
 
 # Настройка логирования
@@ -44,7 +50,76 @@ class RequestHandler:
         self.connection = None
         self.channel = None
         self.should_stop = False
+        
+        # Инициализация модели перевода
+        self.model = None
+        self.tokenizer = None
+        self.device = None
+        if ARDREYGPT_MODE == "local":
+            self._initialize_model()
+            
         self._setup_signal_handlers()
+
+    def _initialize_model(self):
+        """Инициализация модели M2M100 с использованием кэширования"""
+        try:
+            # Отключаем предупреждения huggingface
+            warnings.filterwarnings("ignore", 
+                message=".*resume_download.*", 
+                category=FutureWarning,
+                module="huggingface_hub.*"
+            )
+            
+            model_name = 'facebook/m2m100_418m'
+            logging.info(f"[RequestHandler] Initializing model {model_name}")
+            
+            # Пробуем загрузить модель из кэша
+            try:
+                self.tokenizer = M2M100Tokenizer.from_pretrained(
+                    model_name,
+                    #cache_dir=ARDREYGPT_CACHE_DIR,
+                    local_files_only=True
+                )
+                self.model = M2M100ForConditionalGeneration.from_pretrained(
+                    model_name,
+                    #cache_dir=ARDREYGPT_CACHE_DIR,
+                    local_files_only=True
+                )
+                logging.info("[RequestHandler] Model loaded from cache")
+            except Exception as e:
+                logging.info(f"[RequestHandler] Loading model from HuggingFace: {str(e)}")
+                self.tokenizer = M2M100Tokenizer.from_pretrained(
+                    model_name,
+                    #cache_dir=ARDREYGPT_CACHE_DIR
+                )
+                self.model = M2M100ForConditionalGeneration.from_pretrained(
+                    model_name,
+                    #cache_dir=ARDREYGPT_CACHE_DIR
+                )
+            
+            # Загружаем кастомные веса если указаны
+            if ARDREYGPT_MODEL_WEIGHTS:
+                try:
+                    checkpoint = torch.load(ARDREYGPT_MODEL_WEIGHTS)
+                    if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
+                        self.model.load_state_dict(checkpoint['state_dict'])
+                        logging.info("[RequestHandler] Custom weights loaded successfully")
+                    else:
+                        logging.warning("[RequestHandler] Custom weights file does not contain valid state_dict")
+                except Exception as e:
+                    logging.error(f"[RequestHandler] Error loading custom weights: {e}")
+            
+            # Перемещаем модель на доступное устройство
+            device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
+            self.device = torch.device(device)
+            self.model.to(self.device)
+            logging.info(f"[RequestHandler] Model initialized using device: {self.device}")
+            
+        except Exception as e:
+            logging.error(f"[RequestHandler] Error initializing model: {e}")
+            self.model = None
+            self.tokenizer = None
+            self.device = None
 
     def contains_letters_or_characters(self, text: str) -> bool:
         """Проверяет наличие букв или иероглифов в тексте"""

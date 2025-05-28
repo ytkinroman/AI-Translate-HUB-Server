@@ -35,7 +35,7 @@ class TranslatorProvider:
             mod = getattr(mod, comp)
         return mod
     
-    def execute(self, params: dict) -> dict:
+    def execute(self, params: dict, context: object = None) -> dict:
         """
         Выполняет перевод текста с использованием указанного сервиса перевода.
 
@@ -82,12 +82,21 @@ class TranslatorProvider:
             
             #endregion
             
-            #region Импортируем класс переводчика
+            #region Создаем экземпляр переводчика
             translator_class = f"services.translators.{translator_code}.{translator_code.capitalize()}Translator"
             translator = TranslatorProvider.import_module(translator_class)
-            translator_instance = translator()
-            #endregion
             
+            # Создаем экземпляр с учетом контекста
+            if translator_code == 'ardrey' and context and hasattr(context, 'model'):
+                translator_instance = translator(
+                    model=context.model,
+                    tokenizer=context.tokenizer,
+                    device=context.device
+                )
+            else:
+                translator_instance = translator()
+            #endregion
+
             # Выполняем перевод
             logging.info(f"[TranslatorProvider] Executing translation with translator: {translator_class}")
             result = translator_instance.execute(params)
