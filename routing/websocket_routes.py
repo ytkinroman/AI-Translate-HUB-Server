@@ -3,7 +3,6 @@ import logging
 import time
 from typing import Dict, Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from transport.redis.redis_client import store_connection, remove_connection
 from config import MAX_CONNECTIONS
 from . import active_connections
 from transport.websocket.room_manager import room_manager
@@ -187,7 +186,6 @@ async def websocket_endpoint_with_room(websocket: WebSocket, room_id: str):
     try:
         # Сохраняем websocket локально и id в Redis
         active_connections[session_id] = websocket
-        store_connection(session_id)
 
         # Присоединяем к комнате
         if not room_manager.join_room(room_id, session_id, websocket):
@@ -214,7 +212,6 @@ async def websocket_endpoint_with_room(websocket: WebSocket, room_id: str):
         logger.info(f"Удаление сессии {session_id}")
         if session_id in active_connections:
             del active_connections[session_id]
-        remove_connection(session_id)
         room_manager.leave_room(session_id)
 
 
@@ -242,7 +239,6 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         # Сохраняем websocket локально и id в Redis
         active_connections[session_id] = websocket
-        store_connection(session_id)
 
         # Автоматически присоединяем к персональной комнате
         # Поскольку комната создается на основе уникального session_id, 
@@ -272,6 +268,5 @@ async def websocket_endpoint(websocket: WebSocket):
         # Очищаем ресурсы при любом типе отключения
         logger.info(f"Удаление сессии {session_id} и комнаты {personal_room_id}")
         if session_id in active_connections:
-            del active_connections[session_id]
-        remove_connection(session_id)
+            del active_connections[session_id]  
         room_manager.leave_room(session_id)
