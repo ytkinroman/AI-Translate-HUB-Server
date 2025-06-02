@@ -7,6 +7,7 @@ import aio_pika
 import torch
 import warnings
 from transformers import M2M100ForConditionalGeneration, M2M100Tokenizer
+from peft import PeftModel, PeftConfig
 from jsonrpcserver import dispatch
 from handlers.services_handler import translate
 from transport.rabbitmq.MessageSender import MessageSender
@@ -96,12 +97,19 @@ class RequestHandler:
             # Загружаем кастомные веса если указаны
             if ARDREYGPT_MODEL_WEIGHTS:
                 try:
+                    peft_config = PeftConfig.from_pretrained(ARDREYGPT_MODEL_WEIGHTS)
+
+                    # Загружаем базовую модель
+                    base_model = M2M100ForConditionalGeneration.from_pretrained(peft_config.base_model_name_or_path)
+
+                    # Подключаем LoRA-адаптер
+                    self.model = PeftModel.from_pretrained(base_model, ARDREYGPT_MODEL_WEIGHTS)
+
+                    # Загружаем токенизатор (тот же, что и у базовой модели)
+                    self.tokenizer = M2M100Tokenizer.from_pretrained(peft_config.base_model_name_or_path)
                     checkpoint = torch.load(ARDREYGPT_MODEL_WEIGHTS)
-                    if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
-                        self.model.load_state_dict(checkpoint['state_dict'])
-                        logging.info("[RequestHandler] Custom weights loaded successfully")
-                    else:
-                        logging.warning("[RequestHandler] Custom weights file does not contain valid state_dict")
+                    logging.info("[RequestHandler] Custom weights loaded successfully")
+
                 except Exception as e:
                     logging.error(f"[RequestHandler] Error loading custom weights: {e}")
             
