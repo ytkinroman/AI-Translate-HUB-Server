@@ -78,7 +78,7 @@ ARDREYGPT_MODE = "local"  # Режим работы: "local" или "remote"
 ARDREYGPT_REMOTE_URL = "http://localhost:5000/model_translate"  # URL удаленного сервера
 ARDREYGPT_MODEL_WEIGHTS = None  # Путь к файлу с весами модели (опционально)
 ARDREYGPT_TIMEOUT = 30  # Таймаут для запросов к удаленному серверу (в секундах)
-ARDREYGPT_CACHE_DIR = "models_cache"  # Директория для кэширования моделей
+ARDREYGPT_MODEL_NAME = "models_name"  # Директория для кэширования моделей
 #endregion << ArdreygptTranslator >>
 
-ALLOWED_TRANSLATORS = ['yandex', 'ardreygpt']
+ALLOWED_TRANSLATORS = ['yandex', 'ardrey']
