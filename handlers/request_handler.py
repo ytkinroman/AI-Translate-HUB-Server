@@ -21,7 +21,8 @@ from config import (
     RESULT_QUEUE,
     ARDREYGPT_MODE,
     ARDREYGPT_MODEL_NAME,
-    ARDREYGPT_MODEL_WEIGHTS
+    ARDREYGPT_MODEL_WEIGHTS,
+    ARDREYGPT_MODEL_CACHE_DIR,
 )
 
 # Настройка логирования
@@ -78,10 +79,12 @@ class RequestHandler:
             try:
                 self.tokenizer = M2M100Tokenizer.from_pretrained(
                     model_name,
+                    cache_dir=ARDREYGPT_MODEL_CACHE_DIR,
                     local_files_only=True
                 )
                 self.model = M2M100ForConditionalGeneration.from_pretrained(
                     model_name,
+                    cache_dir=ARDREYGPT_MODEL_CACHE_DIR,
                     local_files_only=True
                 )
                 logging.info("[RequestHandler] Model loaded from cache")
@@ -107,7 +110,7 @@ class RequestHandler:
 
                     # Загружаем токенизатор (тот же, что и у базовой модели)
                     self.tokenizer = M2M100Tokenizer.from_pretrained(peft_config.base_model_name_or_path)
-                    checkpoint = torch.load(ARDREYGPT_MODEL_WEIGHTS)
+                    
                     logging.info("[RequestHandler] Custom weights loaded successfully")
 
                 except Exception as e:
