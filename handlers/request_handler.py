@@ -19,7 +19,7 @@ from config import (
     TRANSLATION_QUEUE as WORK_QUEUE,
     RESULT_QUEUE,
     ARDREYGPT_MODE,
-    ARDREYGPT_CACHE_DIR,
+    ARDREYGPT_MODEL_NAME,
     ARDREYGPT_MODEL_WEIGHTS
 )
 
@@ -70,31 +70,27 @@ class RequestHandler:
                 module="huggingface_hub.*"
             )
             
-            model_name = 'facebook/m2m100_418m'
+            model_name = ARDREYGPT_MODEL_NAME
             logging.info(f"[RequestHandler] Initializing model {model_name}")
             
             # Пробуем загрузить модель из кэша
             try:
                 self.tokenizer = M2M100Tokenizer.from_pretrained(
                     model_name,
-                    #cache_dir=ARDREYGPT_CACHE_DIR,
                     local_files_only=True
                 )
                 self.model = M2M100ForConditionalGeneration.from_pretrained(
                     model_name,
-                    #cache_dir=ARDREYGPT_CACHE_DIR,
                     local_files_only=True
                 )
                 logging.info("[RequestHandler] Model loaded from cache")
             except Exception as e:
                 logging.info(f"[RequestHandler] Loading model from HuggingFace: {str(e)}")
                 self.tokenizer = M2M100Tokenizer.from_pretrained(
-                    model_name,
-                    #cache_dir=ARDREYGPT_CACHE_DIR
+                    model_name
                 )
                 self.model = M2M100ForConditionalGeneration.from_pretrained(
-                    model_name,
-                    #cache_dir=ARDREYGPT_CACHE_DIR
+                    model_name
                 )
             
             # Загружаем кастомные веса если указаны
