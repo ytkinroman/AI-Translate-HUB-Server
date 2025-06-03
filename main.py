@@ -27,8 +27,8 @@ class TranslationServer:
         self.model = M2M100ForConditionalGeneration.from_pretrained(self.model_name)
         
         # Перемещаем модель на GPU если доступно
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model.to(self.device)
+        self.device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
+        self.device = torch.device(self.device)
         
         logger.info(f"Model loaded successfully. Using device: {self.device}")
     
