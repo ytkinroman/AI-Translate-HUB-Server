@@ -18,6 +18,27 @@ class TranslationRequest(BaseModel):
     target_lang: str
 
 class TranslationServer:
+    def _initialize_device(self):
+        """Инициализация устройства с проверками совместимости"""
+        if torch.cuda.is_available():
+            logger.info("CUDA is available, using GPU")
+            return torch.device('cuda')
+        elif torch.backends.mps.is_available():
+            try:
+                # Проверяем, поддерживает ли MPS нужные операции
+                test_tensor = torch.tensor([1.0], device='mps')
+                # Создаем тестовый placeholder для проверки
+                test_tensor = test_tensor * 2
+                logger.info("MPS is available and compatible, using MPS")
+                return torch.device('mps')
+            except Exception as e:
+                logger.warning(f"MPS is available but not compatible: {e}")
+                logger.info("Falling back to CPU")
+                return torch.device('cpu')
+        else:
+            logger.info("No GPU acceleration available, using CPU")
+            return torch.device('cpu')
+
     def __init__(self):
         """Инициализация модели M2M100 для перевода"""
         self.model_name = 'facebook/m2m100_418m'
@@ -26,11 +47,19 @@ class TranslationServer:
         self.tokenizer = M2M100Tokenizer.from_pretrained(self.model_name)
         self.model = M2M100ForConditionalGeneration.from_pretrained(self.model_name)
         
-        # Перемещаем модель на GPU если доступно
-        self.device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
-        self.device = torch.device(self.device)
+        # Определяем и инициализируем устройство с проверками
+        self.device = self._initialize_device()
         
-        logger.info(f"Model loaded successfully. Using device: {self.device}")
+        # Перемещаем модель на выбранное устройство
+        try:
+            self.model = self.model.to(self.device)
+            logger.info(f"Model loaded successfully. Using device: {self.device}")
+        except Exception as e:
+            logger.warning(f"Failed to move model to {self.device}: {e}")
+            logger.info("Falling back to CPU...")
+            self.device = torch.device('cpu')
+            self.model = self.model.to(self.device)
+            logger.info(f"Model loaded successfully on fallback device: {self.device}")
     
     def detect_language(self, text: str) -> str:
         """Определение языка текста"""
