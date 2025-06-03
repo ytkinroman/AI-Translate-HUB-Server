@@ -1,2 +1,0 @@
-from .translators.TranslatorProvider import TranslatorProvider
-from .telegram.TelegramProvider import TelegramProvider
