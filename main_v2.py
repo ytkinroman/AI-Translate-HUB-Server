@@ -2,6 +2,7 @@ import torch
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from transformers import M2M100ForConditionalGeneration, M2M100Tokenizer
+from peft import PeftModel, PeftConfig
 from langdetect import detect
 import logging
 # --- ИЗМЕНЕНИЕ 1: Импортируем утилиту для запуска блокирующих задач в потоке ---
