@@ -21,23 +21,23 @@ class TranslationRequest(BaseModel):
 class TranslationServer:
     def _initialize_device(self):
         """Инициализация устройства с проверками совместимости"""
-        # if torch.cuda.is_available():
-        #     logger.info("CUDA is available, using GPU")
-        #     return torch.device('cuda')
-        # elif torch.backends.mps.is_available():
-        #     try:
-        #         # Проверяем, поддерживает ли MPS нужные операции
-        #         test_tensor = torch.tensor([1.0], device='mps')
-        #         # Создаем тестовый placeholder для проверки
-        #         test_tensor = test_tensor * 2
-        #         logger.info("MPS is available and compatible, using MPS")
-        #         return torch.device('mps')
-        #     except Exception as e:
-        #         logger.warning(f"MPS is available but not compatible: {e}")
-        #         logger.info("Falling back to CPU")
-        #         return torch.device('cpu')
-        # else:
-        #     logger.info("No GPU acceleration available, using CPU")
+        if torch.cuda.is_available():
+            logger.info("CUDA is available, using GPU")
+            return torch.device('cuda')
+        elif torch.backends.mps.is_available():
+            try:
+                # Проверяем, поддерживает ли MPS нужные операции
+                test_tensor = torch.tensor([1.0], device='mps')
+                # Создаем тестовый placeholder для проверки
+                test_tensor = test_tensor * 2
+                logger.info("MPS is available and compatible, using MPS")
+                return torch.device('mps')
+            except Exception as e:
+                logger.warning(f"MPS is available but not compatible: {e}")
+                logger.info("Falling back to CPU")
+                return torch.device('cpu')
+        
+        logger.info("No GPU acceleration available, using CPU")
         return torch.device('cpu')
 
     def _load_model_with_retry(self, model_name_or_path, max_retries=3):

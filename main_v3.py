@@ -58,9 +58,9 @@ class TranslationServer:
                 logger.warning(f"MPS is available but not compatible: {e}")
                 logger.info("Falling back to CPU")
                 return torch.device('cpu')
-        else:
-            logger.info("No GPU acceleration available, using CPU")
-            return torch.device('cpu')
+        
+        logger.info("No GPU acceleration available, using CPU")
+        return torch.device('cpu')
 
     def _check_model_availability(self):
         """Проверка доступности модели в кэше"""
@@ -94,14 +94,86 @@ class TranslationServer:
             logger.error(f"Error checking PEFT config: {e}")
             return False
 
+    def _load_model_with_retry(self, model_name_or_path, max_retries=3):
+        """Загрузка модели с retry-логикой и оптимизациями"""
+        import time
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Loading attempt {attempt + 1}/{max_retries} for {model_name_or_path}")
+                
+                # Сначала пробуем загрузить из кеша
+                try:
+                    logger.info("Attempting to load from cache (local_files_only=True)...")
+                    model = M2M100ForConditionalGeneration.from_pretrained(
+                        model_name_or_path,
+                        local_files_only=True,  # Только из кеша
+                        low_cpu_mem_usage=True,  # Оптимизация памяти
+                        torch_dtype=torch.float32,  # Явный тип данных
+                    )
+                    logger.info("✓ Model loaded successfully from cache!")
+                    return model
+                    
+                except Exception as cache_error:
+                    logger.warning(f"Cache loading failed: {cache_error}")
+                    logger.info("Falling back to online loading...")
+                    
+                    # Если кеш не работает, загружаем из интернета с оптимизациями
+                    model = M2M100ForConditionalGeneration.from_pretrained(
+                        model_name_or_path,
+                        low_cpu_mem_usage=True,
+                        torch_dtype=torch.float32,
+                        resume_download=True,  # Возобновить прерванную загрузку
+                        force_download=False,  # Не перезагружать если есть в кеше
+                    )
+                    logger.info("✓ Model loaded successfully from online!")
+                    return model
+                    
+            except Exception as e:
+                logger.error(f"Loading attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    delay = 5 * (2 ** attempt)  # Exponential backoff
+                    logger.info(f"Retrying in {delay} seconds...")
+                    time.sleep(delay)
+                else:
+                    logger.error(f"All {max_retries} loading attempts failed!")
+                    raise
+
+    def _load_tokenizer_with_retry(self, model_name_or_path, max_retries=3):
+        """Загрузка токенизатора с retry-логикой"""
+        import time
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Loading tokenizer attempt {attempt + 1}/{max_retries}")
+                
+                # Пробуем загрузить из кеша
+                try:
+                    tokenizer = M2M100Tokenizer.from_pretrained(
+                        model_name_or_path,
+                        local_files_only=True
+                    )
+                    logger.info("✓ Tokenizer loaded from cache!")
+                    return tokenizer
+                except:
+                    # Загружаем из интернета
+                    tokenizer = M2M100Tokenizer.from_pretrained(model_name_or_path)
+                    logger.info("✓ Tokenizer loaded from online!")
+                    return tokenizer
+                    
+            except Exception as e:
+                logger.error(f"Tokenizer loading attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    delay = 2 * (2 ** attempt)
+                    logger.info(f"Retrying in {delay} seconds...")
+                    time.sleep(delay)
+                else:
+                    raise
+
     async def initialize_model(self):
-        """Асинхронная инициализация модели"""
+        """Асинхронная инициализация модели с улучшенной retry-логикой"""
         try:
-            logger.info("Starting model initialization...")
-            
-            # Проверка доступности модели
-            if not self._check_model_availability():
-                raise RuntimeError("Model not available in cache. Run download_model.py first.")
+            logger.info("=== Starting model initialization ===")
             
             # Проверка PEFT конфигурации
             if not self._check_peft_config():
@@ -111,24 +183,27 @@ class TranslationServer:
             self.device = self._initialize_device()
             
             def _load_model():
-                """Блокирующая загрузка модели"""
+                """Блокирующая загрузка модели с retry-логикой"""
                 logger.info(f"Loading model {self.model_name}...")
                 
                 # Загружаем конфиг LoRA
+                logger.info("Loading PEFT config...")
                 peft_config = PeftConfig.from_pretrained(self.peft_model_path)
+                base_model_name = peft_config.base_model_name_or_path
+                logger.info(f"Base model from PEFT config: {base_model_name}")
                 
-                # Загружаем базовую модель
-                base_model = M2M100ForConditionalGeneration.from_pretrained(
-                    peft_config.base_model_name_or_path,
-                    torch_dtype=torch.float32,
-                    low_cpu_mem_usage=True
-                )
+                # Загружаем базовую модель с retry-логикой
+                logger.info("Loading base model...")
+                base_model = self._load_model_with_retry(base_model_name)
                 
                 # Подключаем LoRA-адаптер
+                logger.info("Loading PEFT adapter...")
                 model = PeftModel.from_pretrained(base_model, self.peft_model_path)
+                logger.info("✓ PEFT adapter loaded successfully!")
                 
                 # Загружаем токенизатор
-                tokenizer = M2M100Tokenizer.from_pretrained(peft_config.base_model_name_or_path)
+                logger.info("Loading tokenizer...")
+                tokenizer = self._load_tokenizer_with_retry(base_model_name)
                 
                 return model, tokenizer
             
@@ -136,23 +211,25 @@ class TranslationServer:
             self.model, self.tokenizer = await run_in_threadpool(_load_model)
             
             # Перемещение модели на устройство
+            logger.info(f"Moving model to device: {self.device}")
             try:
                 self.model = self.model.to(self.device)
-                logger.info(f"Model loaded successfully. Using device: {self.device}")
+                logger.info(f"✓ Model loaded successfully. Using device: {self.device}")
             except Exception as e:
                 logger.warning(f"Failed to move model to {self.device}: {e}")
                 logger.info("Falling back to CPU...")
                 self.device = torch.device('cpu')
                 self.model = self.model.to(self.device)
-                logger.info(f"Model loaded successfully on fallback device: {self.device}")
+                logger.info(f"✓ Model loaded successfully on fallback device: {self.device}")
             
             self.model_loaded = True
-            logger.info("Model initialization completed successfully!")
+            logger.info("=== Model initialization completed successfully! ===")
             
         except Exception as e:
             logger.error(f"Model initialization failed: {e}")
+            logger.error("Please check your internet connection and try again")
             self.model_loaded = False
-            raise
+            raise RuntimeError(f"Failed to initialize translation model: {e}")
     
     def detect_language(self, text: str) -> str:
         """Определение языка текста"""
