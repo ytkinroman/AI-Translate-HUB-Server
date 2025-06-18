@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Health Check Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .healthy {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .unhealthy {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .service {
+            margin: 10px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .service-name {
+            font-weight: bold;
+            font-size: 16px;
+        }
+        .service-up {
+            color: #28a745;
+        }
+        .service-down {
+            color: #dc3545;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .timestamp {
+            color: #666;
+            font-size: 14px;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #e9ecef;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Translation Server Health Check</h1>
+        
+        <div style="text-align: center; margin: 20px 0;">
+            <button onclick="checkHealth()">Проверить здоровье</button>
+            <button onclick="checkLiveness()">Проверить живость</button>
+        </div>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+
+        async function checkHealth() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                displayHealthResult(data);
+            } catch (error) {
+                displayError('Ошибка при проверке здоровья: ' + error.message);
+            }
+        }
+
+        async function checkLiveness() {
+            try {
+                const response = await fetch(`${API_BASE}/health/live`);
+                const data = await response.json();
+                displaySimpleResult('Liveness Check', data, response.ok);
+            } catch (error) {
+                displayError('Ошибка при проверке живости: ' + error.message);
+            }
+        }
+
+        function displayHealthResult(data) {
+            const resultsDiv = document.getElementById('results');
+            const isHealthy = data.status === 'healthy';
+            
+            let html = `
+                <div class="status ${isHealthy ? 'healthy' : 'unhealthy'}">
+                    Общий статус: ${data.status.toUpperCase()}
+                </div>
+                <div class="timestamp">Проверено: ${new Date(data.timestamp).toLocaleString()}</div>
+                <div class="timestamp">Версия: ${data.version}</div>
+                
+                <h3>Статус сервисов:</h3>
+            `;
+
+            for (const [serviceName, serviceData] of Object.entries(data.services)) {
+                const isUp = serviceData.status === 'up';
+                html += `
+                    <div class="service">
+                        <div class="service-name ${isUp ? 'service-up' : 'service-down'}">
+                            ${serviceName.toUpperCase()}: ${serviceData.status.toUpperCase()}
+                        </div>
+                        ${serviceData.response_time ? `<div>Время отклика: ${serviceData.response_time.toFixed(2)} мс</div>` : ''}
+                        ${serviceData.error ? `<div style="color: #dc3545;">Ошибка: ${serviceData.error}</div>` : ''}
+                    </div>
+                `;
+            }
+
+            html += `
+                <h3>Полный ответ:</h3>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+            `;
+
+            resultsDiv.innerHTML = html;
+        }
+
+        function displaySimpleResult(title, data, isOk) {
+            const resultsDiv = document.getElementById('results');
+            const html = `
+                <div class="status ${isOk ? 'healthy' : 'unhealthy'}">
+                    ${title}: ${isOk ? 'OK' : 'FAILED'}
+                </div>
+                <div class="timestamp">Проверено: ${new Date().toLocaleString()}</div>
+                <h3>Ответ:</h3>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+            `;
+            resultsDiv.innerHTML = html;
+        }
+
+        function displayError(message) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = `
+                <div class="status unhealthy">
+                    ${message}
+                </div>
+            `;
+        }
+
+        // Автоматическая проверка при загрузке страницы
+        window.onload = function() {
+            checkHealth();
+        };
+    </script>
+</body>
+</html>

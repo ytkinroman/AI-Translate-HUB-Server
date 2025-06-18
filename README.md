@@ -4,321 +4,95 @@
 
 ## Основные возможности
 
-- Интеграция с популярными сервисами перевода:
-  - DeepL (высокое качество перевода)
-  - Google Translate (широкая поддержка языков)
-  - Yandex.Translate (хорошая поддержка русского языка)
-- Асинхронная обработка запросов через систему очередей RabbitMQ
-- Получение результатов в реальном времени через WebSocket
-- Горизонтальное масштабирование благодаря поддержке нескольких воркеров
-- Отказоустойчивая архитектура с восстановлением после сбоев
-- Подробное логирование всех операций
-- Интеграция с Telegram ботом (опционально)
-
-## Структура проекта
-
-```
-trans-server/
-├── app.py                      # Точка входа приложения
-├── config.example.py           # Пример конфигурации
-├── requirements.txt            # Зависимости проекта
-├── handlers/                   # Обработчики запросов
-│   ├── request_handler.py      # Обработка входящих запросов
-│   ├── result_handler.py       # Обработка результатов
-│   └── services_handler.py     # Управление сервисами
-├── services/                   # Основные сервисы
-│   ├── telegram/              # Интеграция с Telegram
-│   │   ├── MessageSender.py   # Отправка сообщений
-│   │   └── TelegramProvider.py# Провайдер Telegram API
-│   └── translators/           # Сервисы перевода
-│       ├── BaseTranslator.py  # Базовый класс переводчика
-│       ├── TranslatorProvider.py # Провайдер переводчиков
-│       ├── deepl/             # DeepL интеграция
-│       ├── google/            # Google Translate интеграция
-│       └── yandex/            # Yandex.Translate интеграция
-└── transport/                 # Транспортный слой
-    ├── rabbitmq/             # RabbitMQ интеграция
-    │   ├── Message.py        # Модель сообщения
-    │   └── MessageSender.py  # Отправка сообщений
-    └── redis/                # Redis интеграция
-        └── redis_client.py   # Клиент Redis
-
-```
+- Интеграция с DeepL, Google Translate, Yandex.Translate.
+- Асинхронная обработка запросов через RabbitMQ.
+- Получение результатов в реальном времени через WebSocket.
+- Горизонтальное масштабирование.
+- Отказоустойчивость.
+- Подробное логирование.
+- Опциональная интеграция с Telegram ботом.
 
 ## Системные требования
 
-### Программное обеспечение
-- Python версии 3.12 или выше
-- RabbitMQ сервер (версия 3.12+)
-- Redis сервер (версия 7.2+)
-- API ключи сервисов перевода:
-  - DeepL API ключ ([получить здесь](https://www.deepl.com/pro#developer))
-  - Google Cloud Translate API ключ ([инструкция](https://cloud.google.com/translate/docs/setup))
-  - Yandex.Cloud API ключ ([инструкция](https://cloud.yandex.ru/docs/translate/quickstart))
-
-### Рекомендуемые системные ресурсы
-- RAM: минимум 4GB
-- CPU: 4+ ядра
-- Диск: 2GB свободного места
-- Сеть: Стабильное подключение к интернету (10+ Мбит/с)
-
+- Python 3.12+
+- RabbitMQ 3.12+
+- Redis 7.2+
+- API ключи для сервисов перевода (DeepL, Google, Yandex).
 
 ## Установка и настройка
 
-1. Клонируйте репозиторий:
+1.  Клонируйте репозиторий:
+    ```bash
+    git clone <repository-url>
+    cd trans-server
+    ```
+2.  Создайте и активируйте виртуальное окружение:
+    ```bash
+    python -m venv .venv
+    # Linux/macOS:
+    source .venv/bin/activate
+    # Windows:
+    .venv\Scripts\activate
+    ```
+3.  Установите зависимости:
+    ```bash
+    pip install -r requirements.txt
+    ```
+4.  Настройка конфигурации:
+    - Скопируйте `config.example.py` в `config.py`.
+    - Заполните `config.py`: API ключи, параметры RabbitMQ и Redis.
+
+## Установка и настройка зависимых сервисов (Docker)
+
+### Redis
 ```bash
-git clone <repository-url>
-cd trans-server
+docker run -d --name redis -p 6379:6379 -v redis_data:/data --restart unless-stopped redis:7.2
 ```
 
-2. Создайте и активируйте виртуальное окружение Python:
+### RabbitMQ
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # для Linux/macOS
-.venv\Scripts\activate     # для Windows
+docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 -e RABBITMQ_DEFAULT_USER=admin -e RABBITMQ_DEFAULT_PASS=your_secure_password --restart unless-stopped rabbitmq:3.12-management
 ```
-
-3. Установите зависимости:
-```bash
-pip install -r requirements.txt
-```
-
-4. Настройка конфигурации:
-   - Скопируйте `config.example.py` в `config.py`
-   - Заполните необходимые параметры в `config.py`:
-     - API ключи сервисов перевода
-     - Параметры подключения к RabbitMQ и Redis
-     - Настройки безопасности
-     - Параметры логирования
-
-## Установка и настройка зависимых сервисов
-
-Для запуска Redis и RabbitMQ рекомендуется использовать Docker.
-
-### Установка Docker
-
-1. Установите Docker с [официального сайта](https://docs.docker.com/get-docker/)
-2. Убедитесь, что Docker запущен:
-```bash
-docker --version
-```
-
-### Запуск Redis
-
-1. Запустите Redis в контейнере:
-```bash
-docker run -d \
-  --name redis \
-  -p 6379:6379 \
-  -v redis_data:/data \
-  --restart unless-stopped \
-  redis:7.2
-```
-
-2. Проверьте статус:
-```bash
-docker ps | grep redis
-```
-
-### Запуск RabbitMQ
-
-1. Запустите RabbitMQ в контейнере:
-```bash
-docker run -d \
-  --name rabbitmq \
-  -p 5672:5672 \
-  -p 15672:15672 \
-  -e RABBITMQ_DEFAULT_USER=admin \
-  -e RABBITMQ_DEFAULT_PASS=your_secure_password \
-  --restart unless-stopped \
-  rabbitmq:3.12-management
-```
-
-2. Проверьте статус:
-```bash
-docker ps | grep rabbitmq
-```
-
-3. Веб-интерфейс RabbitMQ доступен по адресу: http://localhost:15672
+Веб-интерфейс RabbitMQ: http://localhost:15672
 
 ## Запуск сервера
 
-1. Убедитесь, что контейнеры запущены:
-```bash
-docker ps | grep -E "redis|rabbitmq"
-```
+1.  Убедитесь, что Docker контейнеры запущены.
+2.  Запустите основной сервер:
+    ```bash
+    uvicorn app:app --reload --host 0.0.0.0 --port 8000
+    ```
+3.  Запустите обработчик запросов на перевод:
+    ```bash
+    python -m handlers.request_handler
+    ```
+4.  Запустите обработчик результатов перевода:
+    ```bash
+    python -m handlers.result_handler
+    ```
 
-2. Запустите сервер:
-```bash
-uvicorn app:app --reload --host 0.0.0.0 --port 8000
-```
-Параметры запуска:
-- `--reload` - автоперезагрузка при изменении кода (только для разработки)
-
-3. Запустите обработчик сообщений на перевод
-```bash
-python -m handlers.request_handler
-```
-
-4. Запустите обработчик сообщений с результатами перевода
-```bash
-python -m handlers.result_handler
-```
-
-## API
+## API Кратко
 
 ### WebSocket API
-
-1. Подключение:
-```javascript
-const ws = new WebSocket('ws://localhost:8000/ws');
-```
-
-2. Получение ID сессии:
-```javascript
-ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    if (data.type === 'connection_established') {
-        const sessionId = data.session_id;
-        // Сохраните sessionId для использования в запросах
-    }
-};
-```
+- **Endpoint**: `ws://localhost:8000/ws`
+- Сервер автоматически создает персональную комнату для каждого пользователя.
+- Сообщения: `connection_established`, `room_joined`, `chat_message`, `translation_result`, `error`.
 
 ### HTTP API
 
-#### Перевод текста
-
+**Перевод текста:**
 ```http
 POST /translate
 Content-Type: application/json
 
 {
     "text": "Текст для перевода",
-    "translator_type": "deepl",  // или "google", "yandex"
-    "source_lang": "",       // можно не указывать или указать код языка
-    "target_lang": "ru",        // целевой язык
-    "ws_session_id": "id_сессии"
+    "translator_type": "deepl",
+    "target_lang": "ru",
+    "ws_session_id": "id_сессии_websocket"
 }
 ```
-
-Ответ:
-```json
-{
-    "status": "success",
-    "message": "Запрос на перевод принят"
-}
-```
-
-## Архитектура
-
-### Классы и компоненты
-
-#### Переводчики
-- **BaseTranslator** - Абстрактный базовый класс для всех переводчиков
-  - Определяет общий интерфейс translate()
-  - Реализует базовую валидацию и обработку ошибок
-- **DeeplTranslator**, **GoogleTranslator**, **YandexTranslator**
-  - Реализуют специфичную логику перевода для каждого сервиса
-  - Обрабатывают API-специфичные ошибки
-- **TranslatorProvider**
-  - Управляет инстансами переводчиков
-  - Реализует выбор переводчика по типу
-
-#### Обработчики
-- **RequestHandler** - Обработка входящих HTTP запросов
-- **ResultHandler** - Обработка результатов перевода
-- **ServicesHandler** - Управление сервисами и их состоянием
-
-#### Транспортный слой
-- **MessageSender** (RabbitMQ) - Отправка сообщений в очереди
-- **Message** - Модель сообщения для RabbitMQ
-- **RedisClient** - Работа с Redis для кэширования и состояния
-
-### Компоненты системы
-
-- **FastAPI**: основной веб-фреймворк
-  - Обработка HTTP запросов
-  - WebSocket соединения
-  - Асинхронная работа
-  
-- **RabbitMQ**: система очередей
-  - Очередь запросов на перевод
-  - Очередь результатов
-  - Обеспечение надежности доставки
-
-- **Redis**: кэширование и состояние
-  - Хранение активных WebSocket соединений
-  - Кэширование частых переводов
-  - Временное хранение состояния
-
-### Процесс перевода
-
-1. Клиент устанавливает WebSocket соединение
-2. Отправляет HTTP запрос на перевод
-3. Запрос помещается в очередь RabbitMQ
-4. Воркер получает задачу и выполняет перевод
-5. Результат отправляется клиенту через WebSocket
-
-## Логирование
-
-Настройка логирования производится в config.py:
-- Уровень логирования (DEBUG, INFO, WARNING, ERROR)
-- Формат сообщений
-- Место хранения логов
-
-Логируются следующие события:
-- Подключения к RabbitMQ/Redis
-- Запросы на перевод
-- Результаты переводов
-- Ошибки и исключения
-- Действия воркеров
-
-## Тестирование
-
-### Тестовая страница
-
-В проекте доступна тестовая HTML страница (`test.example.html`) для проверки функциональности перевода:
-
-- Интерактивный интерфейс для тестирования переводов
-- Поддержка всех доступных сервисов перевода
-- Выбор целевого языка
-- Отображение статуса подключения
-- Визуализация процесса перевода
-- История переводов
-
-Для использования:
-1. Скопируйте `test.example.html` в `test.html`
-2. Откройте `test.html` в браузере
-3. Убедитесь, что сервер запущен
-4. Начните тестирование переводов
-
-### Поддерживаемые языки для тестирования
-- Русский (ru)
-- Английский (en)
-- Немецкий (de)
-- Французский (fr)
-- Испанский (es)
-- Итальянский (it)
-
-## Безопасность
-
-### Рекомендации
-
-1. В продакшене:
-   - Используйте HTTPS
-   - Настройте CORS правильно
-   - Ограничьте число соединений
-   
-2. Защита данных:
-   - Храните ключи API в переменных окружения
-   - Используйте безопасные пароли
-   - Регулярно обновляйте зависимости
-
-3. Мониторинг:
-   - Следите за логами
-   - Настройте оповещения об ошибках
-   - Контролируйте использование ресурсов
+Ответ: `{"status": "success", "message": "Запрос на перевод принят"}`
 
 ## Лицензия
 

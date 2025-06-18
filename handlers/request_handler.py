@@ -1,12 +1,16 @@
 import json
 import regex
+import torch
 import signal
 import asyncio
 import logging
 import aio_pika
+import warnings
 from jsonrpcserver import dispatch
+from peft import PeftModel, PeftConfig
 from handlers.services_handler import translate
 from transport.rabbitmq.MessageSender import MessageSender
+from transformers import M2M100ForConditionalGeneration, M2M100Tokenizer
 
 from config import (
     RMQ_HOST as RABBIT_HOST,
@@ -14,7 +18,11 @@ from config import (
     RMQ_USERNAME as RABBIT_USER,
     RMQ_PASSWORD as RABBIT_PASSWORD,
     TRANSLATION_QUEUE as WORK_QUEUE,
-    RESULT_QUEUE
+    RESULT_QUEUE,
+    ARDREYGPT_MODE,
+    ARDREYGPT_MODEL_NAME,
+    ARDREYGPT_MODEL_WEIGHTS,
+    ARDREYGPT_MODEL_CACHE_DIR,
 )
 
 # Настройка логирования
@@ -44,7 +52,81 @@ class RequestHandler:
         self.connection = None
         self.channel = None
         self.should_stop = False
+        
+        # Инициализация модели перевода
+        self.model = None
+        self.tokenizer = None
+        self.device = None
+        if ARDREYGPT_MODE == "local":
+            self._initialize_model()
+            
         self._setup_signal_handlers()
+
+    def _initialize_model(self):
+        """Инициализация модели M2M100 с использованием кэширования"""
+        try:
+            # Отключаем предупреждения huggingface
+            warnings.filterwarnings("ignore", 
+                message=".*resume_download.*", 
+                category=FutureWarning,
+                module="huggingface_hub.*"
+            )
+            
+            model_name = ARDREYGPT_MODEL_NAME
+            logging.info(f"[RequestHandler] Initializing model {model_name}")
+            
+            # Пробуем загрузить модель из кэша
+            try:
+                self.tokenizer = M2M100Tokenizer.from_pretrained(
+                    model_name,
+                    cache_dir=ARDREYGPT_MODEL_CACHE_DIR,
+                    local_files_only=True
+                )
+                self.model = M2M100ForConditionalGeneration.from_pretrained(
+                    model_name,
+                    cache_dir=ARDREYGPT_MODEL_CACHE_DIR,
+                    local_files_only=True
+                )
+                logging.info("[RequestHandler] Model loaded from cache")
+            except Exception as e:
+                logging.info(f"[RequestHandler] Loading model from HuggingFace: {str(e)}")
+                self.tokenizer = M2M100Tokenizer.from_pretrained(
+                    model_name
+                )
+                self.model = M2M100ForConditionalGeneration.from_pretrained(
+                    model_name
+                )
+            
+            # Загружаем кастомные веса если указаны
+            # if ARDREYGPT_MODEL_WEIGHTS:
+            #     try:
+            #         peft_config = PeftConfig.from_pretrained(ARDREYGPT_MODEL_WEIGHTS)
+
+            #         # Загружаем базовую модель
+            #         base_model = M2M100ForConditionalGeneration.from_pretrained(peft_config.base_model_name_or_path)
+
+            #         # Подключаем LoRA-адаптер
+            #         self.model = PeftModel.from_pretrained(base_model, ARDREYGPT_MODEL_WEIGHTS)
+
+            #         # Загружаем токенизатор (тот же, что и у базовой модели)
+            #         self.tokenizer = M2M100Tokenizer.from_pretrained(peft_config.base_model_name_or_path)
+                    
+            #         logging.info("[RequestHandler] Custom weights loaded successfully")
+
+            #     except Exception as e:
+            #         logging.error(f"[RequestHandler] Error loading custom weights: {e}")
+            
+            # Перемещаем модель на доступное устройство
+            device = 'cuda' if torch.cuda.is_available() else ('mps' if torch.backends.mps.is_available() else 'cpu')
+            self.device = torch.device(device)
+            self.model.to(self.device)
+            logging.info(f"[RequestHandler] Model initialized using device: {self.device}")
+            
+        except Exception as e:
+            logging.error(f"[RequestHandler] Error initializing model: {e}")
+            self.model = None
+            self.tokenizer = None
+            self.device = None
 
     def contains_letters_or_characters(self, text: str) -> bool:
         """Проверяет наличие букв или иероглифов в тексте"""

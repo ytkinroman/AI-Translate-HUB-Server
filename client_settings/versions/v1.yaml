@@ -1,14 +1,10 @@
-# Configuration file for translation client
-
-# Multi-language configuration for UI elements
 ru:
   translators:
-    ardray1: АРДРЕЙ-ГПТ 2000.1
-    ardray2: ARDRAY 5000
+    ardrey: ARDREY 5000
     yandex: Яндекс Переводчик
-    google: Google Translate
-    bing: Bing Translator
-    deepl: DeepL
+    google: Google Translate (В разработке)
+    bing: Bing Translator (В разработке)
+    deepl: DeepL (В разработке)
   languages:
     ru: Русский
     en: Английский
@@ -23,12 +19,11 @@ ru:
 
 en:
   translators:
-    ardray1: ARDRAY-GPT 2000.1
-    ardray2: ARDRAY 5000
+    ardrey: ARDREY 5000
     yandex: Yandex Translate
-    google: Google Translate
-    bing: Bing Translator
-    deepl: DeepL
+    google: Google Translate (В разработке)
+    bing: Bing Translator (В разработке)
+    deepl: DeepL (В разработке)
   languages:
     ru: Russian
     en: English
