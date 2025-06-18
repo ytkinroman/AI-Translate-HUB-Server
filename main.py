@@ -49,7 +49,7 @@ class TranslationServer:
         # self.model = M2M100ForConditionalGeneration.from_pretrained(self.model_name)
 
         # Путь к директории с LoRA-чекпоинтом
-        peft_model_path = "best"  # TODO Добавить путь лдо весов модели
+        peft_model_path = "./checkpoint-3900"  # TODO Добавить путь лдо весов модели
 
         # Загружаем конфиг LoRA
         peft_config = PeftConfig.from_pretrained(peft_model_path)
