@@ -186,7 +186,7 @@ class TranslationServer:
                 forced_bos_token_id=self.tokenizer.get_lang_id(target_lang)
             )
             translated_text = self.tokenizer.batch_decode(
-                generated_tokens,
+                generated_tokens, max_length=256,
                 skip_special_tokens=True
             )[0]
             return translated_text
