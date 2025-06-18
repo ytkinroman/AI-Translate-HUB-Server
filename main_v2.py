@@ -182,7 +182,7 @@ class TranslationServer:
             self.tokenizer.src_lang = source_lang
             inputs = self.tokenizer(text, max_length=256, return_tensors="pt").to(self.device)
             generated_tokens = self.model.generate(
-                **inputs,
+                **inputs, max_length=256,
                 forced_bos_token_id=self.tokenizer.get_lang_id(target_lang)
             )
             translated_text = self.tokenizer.batch_decode(
