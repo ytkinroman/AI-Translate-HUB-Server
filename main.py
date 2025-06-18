@@ -3,6 +3,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from transformers import M2M100ForConditionalGeneration, M2M100Tokenizer
 from langdetect import detect
+from peft import PeftModel, PeftConfig
 import logging
 
 # Настройка логирования
@@ -44,8 +45,23 @@ class TranslationServer:
         self.model_name = 'facebook/m2m100_418m'
         logger.info(f"Loading model {self.model_name}...")
         
-        self.tokenizer = M2M100Tokenizer.from_pretrained(self.model_name)
-        self.model = M2M100ForConditionalGeneration.from_pretrained(self.model_name)
+        # self.tokenizer = M2M100Tokenizer.from_pretrained(self.model_name)
+        # self.model = M2M100ForConditionalGeneration.from_pretrained(self.model_name)
+
+        # Путь к директории с LoRA-чекпоинтом
+        peft_model_path = "best"  # TODO Добавить путь лдо весов модели
+
+        # Загружаем конфиг LoRA
+        peft_config = PeftConfig.from_pretrained(peft_model_path)
+        print(peft_config.base_model_name_or_path)
+        # Загружаем базовую модель
+        base_model = M2M100ForConditionalGeneration.from_pretrained(peft_config.base_model_name_or_path)
+
+        # Подключаем LoRA-адаптер
+        self.model = PeftModel.from_pretrained(base_model, peft_model_path)
+
+        # Загружаем токенизатор (тот же, что и у базовой модели)
+        self.tokenizer = M2M100Tokenizer.from_pretrained(peft_config.base_model_name_or_path)
         
         # Определяем и инициализируем устройство с проверками
         self.device = self._initialize_device()
