@@ -1,8 +1,8 @@
 import uuid
 import logging
 import time
-from typing import Dict, Any
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from typing import Dict, Any, Optional
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from transport.redis.redis_client import store_connection, remove_connection
 from config import MAX_CONNECTIONS
 from . import active_connections
@@ -219,13 +219,14 @@ async def websocket_endpoint_with_room(websocket: WebSocket, room_id: str):
 
 
 @router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, client_id: Optional[str] = Query(None)):
     """
     Основной endpoint для WebSocket с автоматическим созданием персональной комнаты.
     Сервер автоматически создает комнату room_{session_id} для каждого пользователя.
     
     Args:
         websocket: Входящее WebSocket соединение
+        client_id: Опциональный client_id для переподключений
     """
     # Проверяем лимит подключений
     if len(active_connections) >= MAX_CONNECTIONS:
@@ -234,8 +235,24 @@ async def websocket_endpoint(websocket: WebSocket):
 
     await websocket.accept()
     
-    # Генерируем UUID для сессии
-    session_id = str(uuid.uuid4())
+    # Если client_id передан и валиден, используем его
+    if client_id and client_id.strip():
+        session_id = client_id
+        logger.info(f"Используется переданный client_id: {session_id}")
+        
+        # Обработка коллизий - если ID уже активен, закрываем старое соединение
+        if session_id in active_connections:
+            logger.warning(f"Client_id {session_id} уже активен, закрываем старое соединение")
+            old_websocket = active_connections[session_id]
+            try:
+                await old_websocket.close(code=1008, reason="Новое подключение с тем же client_id")
+            except:
+                pass
+    else:
+        # Генерируем новый ID для первого подключения
+        session_id = str(uuid.uuid4())
+        logger.info(f"Сгенерирован новый session_id: {session_id}")
+    
     # Создаем персональную комнату на основе session_id
     personal_room_id = f"room_{session_id}"
     
